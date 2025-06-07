@@ -1,7 +1,10 @@
+// backend/server.js
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const db = require('./firebaseConfig'); // Firebase 설정 불러오기
+// const db = require('./firebaseConfig'); // 이제 server.js에서 직접 db를 사용하지 않으므로 이 줄은 삭제해도 됩니다.
+const projectRoutes = require('./routes/projects'); // 새로 만든 라우트 파일을 불러옵니다.
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -11,37 +14,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // --- API 라우트 ---
+// '/api/projects' 경로로 오는 모든 요청은 projectRoutes에서 처리하도록 설정합니다.
+app.use('/api/projects', projectRoutes);
 
-// [GET] /api/projects - 모든 프로젝트 목록 가져오기
-// [POST] /api/projects - 새 프로젝트 생성
-app.post('/api/projects', async (req, res) => {
-  try {
-    const { name } = req.body;
-
-    // 간단한 유효성 검사
-    if (!name) {
-      return res.status(400).send("Project name is required.");
-    }
-
-    const newProject = {
-      name: name,
-      createdAt: new Date().toISOString(), // 생성 시간 기록
-    };
-
-    // Firestore 'projects' 컬렉션에 새 문서 추가
-    const projectRef = await db.collection('projects').add(newProject);
-
-    // 생성된 문서의 ID와 데이터를 함께 클라이언트에 반환
-    res.status(201).json({
-      id: projectRef.id,
-      ...newProject
-    });
-
-  } catch (error) {
-    console.error("Error creating project: ", error);
-    res.status(500).send("Internal Server Error");
-  }
-});
 
 app.get('/', (req, res) => {
   res.send('AI Animation Backend Server is Running!');
