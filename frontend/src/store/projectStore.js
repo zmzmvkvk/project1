@@ -8,6 +8,7 @@ const useProjectStore = create((set) => ({
   error: null,
     currentProject: null,
   scenes: [],
+  loadingSceneId: null,
 
   // 액션 (Actions)
   fetchProjects: async () => {
@@ -35,6 +36,7 @@ const useProjectStore = create((set) => ({
       set({ error: '프로젝트를 추가하는데 실패했습니다.', loading: false });
     }
   },
+
   // 특정 프로젝트의 첫 번째 스토리를 불러오는 액션
   fetchStory: async (projectId) => {
     set({ loading: true, error: null, scenes: [] });
@@ -65,7 +67,34 @@ const useProjectStore = create((set) => ({
     // const projectId = get().currentProject.id;
     // const storyId = ...;
     // await axios.patch(`/api/projects/${projectId}/stories/${storyId}/scenes/order`, { scenes: newScenes });
-  }
+  },
+  
+   generateImageForScene: async (sceneId) => {
+        set({ loadingSceneId: sceneId });
+        try {
+            // API 호출 시 필요한 projectId와 storyId를 알아내야 합니다.
+            // 여기서는 임시로 하드코딩하거나, 스토어에 현재 프로젝트/스토리 ID를 저장해야 합니다.
+            // 이 부분은 다음 단계에서 고도화하겠습니다.
+            const currentProjectId = get().currentProject?.id; // 예시
+            const currentStoryId = get().currentStory?.id;   // 예시
+
+            // *** 중요: 위 currentProjectId와 currentStoryId를 실제 값으로 가져오는 로직이 필요합니다.
+            // 지금은 임시로 URL에서 가져오도록 StoryEditorPage에서 넘겨주는 방식을 사용하겠습니다.
+            
+            // 이 로직은 StoryEditorPage로 옮깁니다.
+            // const response = await axios.post(`/api/scenes/${sceneId}/generate-image`, { projectId, storyId });
+            // const updatedScene = response.data;
+            
+            // set(state => ({
+            //     scenes: state.scenes.map(s => s.id === sceneId ? updatedScene : s),
+            //     loadingSceneId: null,
+            // }));
+            
+        } catch (error) {
+            console.error("Failed to generate image:", error);
+            set({ error: '이미지 생성에 실패했습니다.', loadingSceneId: null });
+        }
+    },
 }));
 
 export default useProjectStore;
