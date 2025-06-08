@@ -1,70 +1,93 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import useProjectStore from '../store/projectStore';
 import axios from 'axios';
+import SceneCard from '../components/SceneCard'
+import SettingsModal from '../components/SettingsModal'
 
 const StoryEditorPage = () => {
   const { projectId } = useParams();
-
-  // --- 무한 루프 해결: 필요한 상태와 액션을 각각 선택합니다 ---
-  const scenes = useProjectStore((state) => state.scenes);
-  const fetchStory = useProjectStore((state) => state.fetchStory);
-  const updateSceneOrder = useProjectStore((state) => state.updateSceneOrder);
-  const loading = useProjectStore((state) => state.loading);
-  const error = useProjectStore((state) => state.error);
-  // ---
+  const { scenes, updateSceneOrder, loading, error } = useProjectStore(state => ({
+    scenes: state.scenes,
+    updateSceneOrder: state.updateSceneOrder,
+    loading: state.loading,
+    error: state.error,
+  }));
+  
+  const [storyId, setStoryId] = useState(null);
+  const [loadingSceneId, setLoadingSceneId] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false); // 2. 모달 상태 추가
 
   useEffect(() => {
-    if (projectId) {
-      fetchStory(projectId);
-    }
-  }, [projectId, fetchStory]); // 이제 fetchStory는 안정적인 함수 참조이므로 루프가 발생하지 않습니다.
-
-  const onDragEnd = (result) => {
-    if (!result.destination) return;
-    const items = Array.from(scenes);
-    const [reorderedItem] = items.splice(result.source.index, 1);
-    items.splice(result.destination.index, 0, reorderedItem);
-    
-    // 순서가 변경된 배열로 상태 업데이트
-    updateSceneOrder(items.map((item, index) => ({ ...item, order: index + 1 })));
-  };
-
-  const handleGenerateStory = async () => {
-      const topic = window.prompt("스토리 주제를 입력하세요:", "용감한 사자가 왕이 되는 이야기");
-      if (!topic) return;
-      
+    const fetchStory = async () => {
+      if (!projectId) return;
       useProjectStore.setState({ loading: true });
       try {
-        const response = await axios.post(`/api/projects/${projectId}/story`, { topic, platform: 'youtube' });
-        useProjectStore.setState({ scenes: response.data.scenes, loading: false });
+        const storiesRes = await axios.get(`/api/projects/${projectId}/stories`);
+        if (storiesRes.data.length > 0) {
+          const firstStory = storiesRes.data[0];
+          setStoryId(firstStory.id);
+          const scenesRes = await axios.get(`/api/projects/${projectId}/stories/${firstStory.id}/scenes`);
+          useProjectStore.setState({ scenes: scenesRes.data });
+        } else {
+          useProjectStore.setState({ scenes: [] });
+        }
       } catch (err) {
-        alert("스토리 생성에 실패했습니다.");
-        useProjectStore.setState({ error: '스토리 생성에 실패했습니다.', loading: false });
+        useProjectStore.setState({ error: '스토리를 불러오는데 실패했습니다.' });
         console.error(err);
+      } finally {
+        useProjectStore.setState({ loading: false });
       }
+    };
+    fetchStory();
+  }, [projectId]);
+
+// 3. 스토리 생성 로직을 모달의 onSubmit 핸들러로 변경
+  const handleGenerateStory = async ({ topic, platform }) => {
+    setIsModalOpen(false); // 모달 닫기
+    useProjectStore.setState({ loading: true, scenes: [] }); // 로딩 시작 및 기존 씬 초기화
+    try {
+      const response = await axios.post(`/api/projects/${projectId}/story`, { topic, platform });
+      const { storyId: newStoryId, scenes: newScenes } = response.data;
+      setStoryId(newStoryId);
+      useProjectStore.setState({ scenes: newScenes });
+    } catch (err) {
+      alert("스토리 생성에 실패했습니다.");
+      useProjectStore.setState({ error: '스토리 생성에 실패했습니다.' });
+      console.error(err);
+    } finally {
+      useProjectStore.setState({ loading: false });
+    }
   };
 
   return (
     <div>
+      <SettingsModal
+        isOpen={isModalOpen}
+        onRequestClose={() => setIsModalOpen(false)}
+        onSubmit={handleGenerateStory}
+        isLoading={loading}
+      />
+
       <Link to="/" className="text-blue-400 hover:underline mb-6 inline-block">&larr; Back to Dashboard</Link>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-4xl font-bold">Story Editor</h1>
         <button 
-          onClick={handleGenerateStory}
+          onClick={() => setIsModalOpen(true)} // 4. 버튼 클릭 시 모달 열기
           className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-          disabled={loading}
         >
-          {loading ? '생성 중...' : 'Generate Story with AI'}
+          Generate Story with AI
         </button>
       </div>
       
-      {loading && scenes.length === 0 && <p>스토리 로딩 중...</p>}
+      {loading && scenes.length === 0 && <p>스토리 로딩/생성 중...</p>}
       {error && <p className="text-red-500">{error}</p>}
-      
       {!loading && scenes.length === 0 && !error && (
-        <p>생성된 스토리가 없습니다. 버튼을 눌러 AI로 스토리를 생성해보세요.</p>
+        <div className="text-center py-10">
+          <p>생성된 스토리가 없습니다.</p>
+          <p className="text-gray-400 text-sm mt-2">버튼을 눌러 AI로 새로운 스토리를 생성해보세요.</p>
+        </div>
       )}
 
       <DragDropContext onDragEnd={onDragEnd}>
