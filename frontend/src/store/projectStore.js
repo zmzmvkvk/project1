@@ -1,14 +1,15 @@
 import { create } from 'zustand';
 import axios from 'axios';
 
-const useProjectStore = create((set) => ({
+const useProjectStore = create((set, get) => ({
   // 상태 (State)
   projects: [],
   loading: false,
   error: null,
-    currentProject: null,
   scenes: [],
-  loadingSceneId: null,
+  loadingSceneId: null, // 개별 씬의 이미지 생성 로딩 상태
+  currentProjectId: null, // 현재 보고 있는 프로젝트 ID
+  currentStoryId: null, // 현재 보고 있는 스토리 ID
 
   // 액션 (Actions)
   fetchProjects: async () => {
@@ -26,7 +27,6 @@ const useProjectStore = create((set) => ({
     set({ loading: true, error: null });
     try {
       const response = await axios.post('/api/projects', { name: projectName });
-      // 기존 projects 배열에 새로 생성된 프로젝트 추가
       set((state) => ({
         projects: [...state.projects, response.data],
         loading: false,
@@ -37,58 +37,84 @@ const useProjectStore = create((set) => ({
     }
   },
 
-  // 특정 프로젝트의 첫 번째 스토리를 불러오는 액션
   fetchStory: async (projectId) => {
-    set({ loading: true, error: null, scenes: [] });
+    set({ loading: true, error: null, scenes: [], currentProjectId: projectId, currentStoryId: null });
     try {
+      // 프로젝트의 모든 스토리 목록을 가져옵니다.
       const storiesResponse = await axios.get(`/api/projects/${projectId}/stories`);
       
       if (storiesResponse.data && storiesResponse.data.length > 0) {
-        // 가장 최신 스토리(첫 번째)의 씬들을 가져옵니다.
+        // 기획에 따라 가장 최신 스토리(주로 첫 번째)를 사용합니다.
         const firstStory = storiesResponse.data[0];
+        set({ currentStoryId: firstStory.id });
         const scenesResponse = await axios.get(`/api/projects/${projectId}/stories/${firstStory.id}/scenes`);
         set({ scenes: scenesResponse.data, loading: false });
       } else {
-        // 스토리가 없으면 빈 배열로 상태를 업데이트하고 로딩을 종료합니다.
         set({ scenes: [], loading: false });
       }
     } catch (error) {
-       console.error("Failed to fetch story:", error);
-       set({ error: '스토리를 불러오는데 실패했습니다.', loading: false });
+      console.error("Failed to fetch story:", error);
+      set({ error: '스토리를 불러오는데 실패했습니다.', loading: false });
     }
   },
   
-  // 씬 순서를 업데이트하는 액션
-  updateSceneOrder: (newScenes) => {
-    // 먼저 UI를 즉시 업데이트 (Optimistic Update)
-    set({ scenes: newScenes });
-    
-    // (나중에 구현) 백엔드에 변경된 순서를 저장하는 API 호출
-    // const projectId = get().currentProject.id;
-    // const storyId = ...;
-    // await axios.patch(`/api/projects/${projectId}/stories/${storyId}/scenes/order`, { scenes: newScenes });
+  generateStory: async (projectId, topic, platform = 'youtube') => {
+    set({ loading: true, error: null });
+    try {
+      // 백엔드의 AI 스토리 생성 엔드포인트를 호출합니다.
+      const response = await axios.post(`/api/projects/${projectId}/story`, { topic, platform });
+      set({
+        scenes: response.data.scenes,
+        currentStoryId: response.data.storyId,
+        loading: false,
+      });
+    } catch (err) {
+      console.error("Failed to generate story:", err);
+      set({ error: '스토리 생성에 실패했습니다.', loading: false });
+      throw err; // 컴포넌트에서 추가적인 에러 처리를 할 수 있도록 다시 던집니다.
+    }
   },
   
-   generateImageForScene: async (sceneId) => {
-        set({ loadingSceneId: sceneId });
-        try {
-            // API 호출 시 필요한 projectId와 storyId를 알아내야 합니다.
-            // 여기서는 임시로 하드코딩하거나, 스토어에 현재 프로젝트/스토리 ID를 저장해야 합니다.
-            // 이 부분은 다음 단계에서 고도화하겠습니다.
-            const currentProjectId = get().currentProject?.id; // 예시
-            const currentStoryId = get().currentStory?.id;   // 예시
+  updateSceneOrder: (newScenes) => {
+    // 순서가 반영된 새로운 씬 배열을 만듭니다.
+    const orderedScenes = newScenes.map((scene, index) => ({ ...scene, order: index + 1 }));
+    
+    // UI를 즉시 업데이트 (Optimistic Update)
+    set({ scenes: orderedScenes });
+    
+    // TODO: 백엔드에 변경된 순서를 저장하는 API 호출을 구현해야 합니다.
+    // const { currentProjectId, currentStoryId } = get();
+    // try {
+    //   await axios.put(`/api/projects/${currentProjectId}/stories/${currentStoryId}/scenes/reorder`, { scenes: orderedScenes });
+    // } catch (error) {
+    //   console.error("Failed to save scene order:", error);
+    //   // 에러 발생 시 원래 순서로 되돌리는 로직을 추가할 수 있습니다.
+    // }
+  },
+  
+  generateImageForScene: async (sceneId) => {
+        const { currentProjectId, currentStoryId } = get();
+        if (!currentProjectId || !currentStoryId) {
+            const errorMsg = '이미지 생성을 위해 프로젝트와 스토리가 먼저 선택되어야 합니다.';
+            set({ error: errorMsg, loadingSceneId: null });
+            console.error(errorMsg);
+            return;
+        }
 
-            // *** 중요: 위 currentProjectId와 currentStoryId를 실제 값으로 가져오는 로직이 필요합니다.
-            // 지금은 임시로 URL에서 가져오도록 StoryEditorPage에서 넘겨주는 방식을 사용하겠습니다.
+        set({ loadingSceneId: sceneId, error: null });
+        try {
+            // 백엔드의 AI 이미지 생성 엔드포인트를 호출합니다.
+            const response = await axios.post(`/api/projects/scenes/${sceneId}/generate-image`, {
+                projectId: currentProjectId,
+                storyId: currentStoryId,
+            });
+            const updatedScene = response.data;
             
-            // 이 로직은 StoryEditorPage로 옮깁니다.
-            // const response = await axios.post(`/api/scenes/${sceneId}/generate-image`, { projectId, storyId });
-            // const updatedScene = response.data;
-            
-            // set(state => ({
-            //     scenes: state.scenes.map(s => s.id === sceneId ? updatedScene : s),
-            //     loadingSceneId: null,
-            // }));
+            // 상태를 업데이트하여 생성된 이미지를 반영합니다.
+            set(state => ({
+                scenes: state.scenes.map(s => s.id === sceneId ? updatedScene : s),
+                loadingSceneId: null,
+            }));
             
         } catch (error) {
             console.error("Failed to generate image:", error);
