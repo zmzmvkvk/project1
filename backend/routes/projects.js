@@ -1,7 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../firebaseConfig");
-const { createStoryPrompt } = require("../services/promptService");
+const {
+  createStoryPrompt,
+  createImagePrompt,
+} = require("../services/promptService");
 const OpenAI = require("openai");
 const axios = require("axios");
 
@@ -221,43 +224,78 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
     const { sceneId } = req.params;
     const { projectId, storyId, settings } = req.body;
 
-    const sceneRef = db
-      .collection("projects")
-      .doc(projectId)
-      .collection("stories")
-      .doc(storyId)
-      .collection("scenes")
-      .doc(sceneId);
-    const sceneDoc = await sceneRef.get();
+    // 1. DB에서 관련 데이터 로드
+    const projectRef = db.collection("projects").doc(projectId);
+    const storyRef = projectRef.collection("stories").doc(storyId);
+    const sceneRef = storyRef.collection("scenes").doc(sceneId);
+
+    const [projectDoc, storyDoc, sceneDoc] = await Promise.all([
+      projectRef.get(),
+      storyRef.get(),
+      sceneRef.get(),
+    ]);
+
     if (!sceneDoc.exists) {
       return res.status(404).send("Scene not found");
     }
+
+    const projectData = projectDoc.data();
+    const storyData = storyDoc.data();
     const sceneData = sceneDoc.data();
 
-    const promptText =
-      sceneData.visualPrompt ||
-      `${sceneData.text}, epic cinematic shot, detailed, fantasy art, high quality`;
+    let visualPrompt = "";
 
+    // 2. 이미지 생성용 프롬프트 결정
+    // 사용자가 프롬프트를 직접 수정해서 보냈다면 그 값을 사용하고,
+    // 그렇지 않다면 ChatGPT를 통해 새로 생성합니다.
+    if (settings.prompt) {
+      visualPrompt = settings.prompt;
+    } else {
+      console.log("Generating a new visual prompt with AI...");
+      const promptForPrompt = createImagePrompt(
+        sceneData.text,
+        storyData.character
+      );
+      const promptResponse = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: promptForPrompt }],
+      });
+      visualPrompt = promptResponse.choices[0].message.content.trim();
+      console.log("Generated Visual Prompt:", visualPrompt);
+    }
+
+    // 3. 백엔드에서 설정값 안정화 처리
+    // 프론트에서 어떤 값이 오든 안전하게 처리합니다.
+    const sanitizedSettings = {
+      guidance_scale: settings.guidance_scale || 7,
+      controlnets: settings.controlnets || [],
+      elements: settings.elements || [],
+      negative_prompt: settings.negative_prompt || "",
+    };
+
+    // 4. Leonardo AI API에 보낼 최종 데이터 구성
     const generationPayload = {
-      prompt: promptText,
-      modelId: "1e60896f-3c26-4296-8ecc-53e2afecc132",
+      prompt: visualPrompt,
+      modelId:
+        projectData.leonardoModelId || "1e60896f-3c26-4296-8ecc-53e2afecc132",
       width: 1024,
       height: 576,
       num_images: 1,
-      guidance_scale: settings.guidance_scale,
-      controlnets: settings.controlnets,
-      elements: settings.elements,
+      guidance_scale: sanitizedSettings.guidance_scale,
+      controlnets: sanitizedSettings.controlnets,
+      elements: sanitizedSettings.elements,
+      negative_prompt: sanitizedSettings.negative_prompt,
     };
 
-    Object.keys(generationPayload).forEach(
-      (key) =>
-        (generationPayload[key] === undefined ||
-          generationPayload[key] === null ||
-          (Array.isArray(generationPayload[key]) &&
-            generationPayload[key].length === 0)) &&
-        delete generationPayload[key]
-    );
+    // Leonardo API는 빈 배열이나 빈 문자열을 보내면 오류를 일으킬 수 있으므로, 해당 속성을 제거합니다.
+    if (generationPayload.controlnets.length === 0)
+      delete generationPayload.controlnets;
+    if (generationPayload.elements.length === 0)
+      delete generationPayload.elements;
+    if (!generationPayload.negative_prompt)
+      delete generationPayload.negative_prompt;
 
+    // 5. Leonardo AI에 이미지 생성 요청 및 결과 폴링
     const generationResponse = await axios.post(
       "https://cloud.leonardo.ai/api/rest/v1/generations",
       generationPayload,
@@ -265,18 +303,25 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
     );
 
     const generationId = generationResponse.data.sdGenerationJob.generationId;
-
     let generatedImage = null;
+
     for (let i = 0; i < 20; i++) {
+      // 최대 100초간 폴링
       await sleep(5000);
       const resultResponse = await axios.get(
         `https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`,
         { headers: { authorization: `Bearer ${process.env.LEONARDO_API_KEY}` } }
       );
       const generationResult = resultResponse.data.generations_by_pk;
-      if (generationResult && generationResult.status === "COMPLETE") {
+      if (
+        generationResult &&
+        generationResult.status === "COMPLETE" &&
+        generationResult.generated_images.length > 0
+      ) {
         generatedImage = generationResult.generated_images[0];
         break;
+      } else if (generationResult && generationResult.status === "FAILED") {
+        throw new Error("Leonardo AI image generation failed.");
       }
     }
 
@@ -284,21 +329,25 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
       throw new Error("Image generation timed out or failed.");
     }
 
-    const finalSceneData = {
-      ...sceneData,
+    // 6. Firestore에 최종 결과 업데이트
+    // sanitizedSettings를 사용해 'undefined'가 절대 들어가지 않도록 보장합니다.
+    const updatePayload = {
       image_url: generatedImage.url,
-      guidance_scale: settings.guidance_scale,
-      controlnets: settings.controlnets,
-      elements: settings.elements,
+      visualPrompt: visualPrompt, // 생성에 사용된 프롬프트를 저장
+      guidance_scale: sanitizedSettings.guidance_scale,
+      controlnets: sanitizedSettings.controlnets,
+      elements: sanitizedSettings.elements,
     };
-    await sceneRef.update(finalSceneData);
 
-    res.status(200).json(finalSceneData);
+    await sceneRef.update(updatePayload);
+
+    // 7. 프론트엔드에 최종 씬 데이터 응답
+    res.status(200).json({
+      ...sceneData,
+      ...updatePayload,
+    });
   } catch (error) {
-    console.error(
-      "Error generating image:",
-      error.response ? error.response.data : error.message
-    );
+    console.error("Error generating image:", error.stack);
     res.status(500).send("Internal Server Error");
   }
 });
