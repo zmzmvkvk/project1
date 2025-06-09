@@ -42,6 +42,18 @@ const SceneSettingsPanel = ({ scene }) => {
     e.target.value = "";
   };
 
+  const sceneSettings = scene.sceneSettings || {};
+
+  const handleSceneSettingChange = (e) => {
+    const { name, value } = e.target;
+    updateScene(scene.id, {
+      sceneSettings: {
+        ...sceneSettings,
+        [name]: value,
+      },
+    });
+  };
+
   const handleControlNetChange = (index, field, value) => {
     const updated = activeControlNets.map((cn, i) =>
       i === index ? { ...cn, [field]: value } : cn
@@ -71,33 +83,66 @@ const SceneSettingsPanel = ({ scene }) => {
     updateScene(scene.id, { elements: filtered });
   };
 
-  // 설정 계층 적용: Scene 개별 값 > Project 전역 값 > 시스템 기본값
   const guidance =
     scene.guidance_scale ?? currentProject?.defaultGuidanceScale ?? 7;
 
   return (
     <div className="bg-gray-900 p-4 border-t border-gray-700 space-y-6">
-      {/* 기본 설정 */}
-      <div>
-        <h4 className="text-md font-semibold text-white mb-3">기본 설정</h4>
-        <div className="mb-4">
-          <label
-            htmlFor={`guidance-${scene.id}`}
-            className="block text-sm font-medium text-gray-300 mb-1"
-          >
-            Guidance Scale:{" "}
-            <span className="font-bold text-blue-400">{guidance}</span>
-          </label>
-          <input
-            id={`guidance-${scene.id}`}
-            type="range"
-            min="1"
-            max="20"
-            value={guidance} // 계층이 적용된 값을 사용
-            onChange={handleGuidanceChange}
-            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-          />
+      <h4 className="text-md font-semibold text-white mb-3">상세 생성 설정</h4>
+
+      <div className="p-3 bg-gray-800 rounded-md border border-gray-700">
+        <h5 className="text-sm font-semibold text-gray-200 mb-3">
+          씬 상세 연출
+        </h5>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3">
+          {[
+            { name: "background", label: "배경" },
+            { name: "timeOfDay", label: "시간대" },
+            { name: "action", label: "행동" },
+            { name: "emotion", label: "감정" },
+            { name: "cameraView", label: "카메라 시점" },
+            { name: "lighting", label: "조명" },
+          ].map(({ name, label }) => (
+            <div key={name}>
+              <label
+                htmlFor={`${name}-${scene.id}`}
+                className="text-xs text-gray-400"
+              >
+                {label}
+              </label>
+              <input
+                id={`${name}-${scene.id}`}
+                type="text"
+                name={name}
+                value={sceneSettings[name] || ""}
+                onChange={handleSceneSettingChange}
+                className="w-full text-sm bg-gray-700 border border-gray-600 rounded-md p-1 mt-1"
+                placeholder={`${label}을(를) 입력하세요...`}
+              />
+            </div>
+          ))}
         </div>
+      </div>
+
+      {/* 기본 설정 */}
+      <div className="p-3 bg-gray-800 rounded-md border border-gray-700">
+        <h5 className="text-sm font-semibold text-gray-200 mb-2">기본 설정</h5>
+        <label
+          htmlFor={`guidance-${scene.id}`}
+          className="block text-xs font-medium text-gray-400"
+        >
+          Guidance Scale:{" "}
+          <span className="font-bold text-blue-400">{guidance}</span>
+        </label>
+        <input
+          id={`guidance-${scene.id}`}
+          type="range"
+          min="1"
+          max="20"
+          value={guidance}
+          onChange={handleGuidanceChange}
+          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer mt-1"
+        />
       </div>
 
       {/* ControlNet 구성 패널 */}

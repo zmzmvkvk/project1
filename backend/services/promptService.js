@@ -43,38 +43,49 @@ function createStoryPrompt({ platform, topic, character }) {
 }
 
 /**
- * 이미지 및 비디오 생성을 위한 상세 영어 프롬프트를 만들어달라고 AI에게 요청하는 프롬프트 템플릿
- * @param {string} sceneText - 한국어 씬(장면) 텍스트
- * @param {string} characterDescription - 캐릭터에 대한 영어 설명
+ * 계층적 설정값을 바탕으로 이미지/비디오 프롬프트를 생성하도록 요청하는 새로운 템플릿
+ * @param {string} sceneText - 컨텍스트 파악을 위한 한국어 씬 텍스트
+ * @param {object} characterTemplate - 의상, 헤어 등 캐릭터 전역 설정
+ * @param {object} sceneSettings - 배경, 조명 등 씬 개별 설정
  * @returns {string} - ChatGPT에 보낼 프롬프트
  */
-function createImagePrompt(sceneText, characterDescription) {
-  return `You are an expert Creative Director and Prompt Engineer for an AI video generation pipeline.
-Your task is to analyze the following Korean scene description and character information, then generate a JSON object containing two distinct, detailed prompts in English: 'imgPrompt' for still image generation and 'videoPrompt' for video clip generation.
+function createImagePrompt(
+  sceneText,
+  characterTemplate = {},
+  sceneSettings = {}
+) {
+  // 설정 객체를 프롬프트에 주입하기 좋은 문자열로 변환
+  const characterDetails = Object.entries(characterTemplate)
+    .filter(([, value]) => value) // 값이 있는 항목만 필터링
+    .map(([key, value]) => `${key}: ${value}`)
+    .join(", ");
 
-**Context:**
-- Korean Scene: "${sceneText}"
-- Main Character: "${characterDescription}"
+  const sceneDetails = Object.entries(sceneSettings)
+    .filter(([, value]) => value)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join(", ");
 
-**Instructions:**
+  return `You are a world-class AI prompt engineer for cinematic image generation.
+Your task is to synthesize information from multiple sources into a single, cohesive, and master-level prompt for an image generation AI like Leonardo AI.
 
-1.  **Analyze the Context:** Understand the core action, emotion, and setting from the Korean text.
+**CONTEXT & HIERARCHY:**
+1.  **Scene-Specific Directives (Top Priority):** These settings MUST be used and override all other context if there is a conflict. Details: [${sceneDetails}]
+2.  **Character Template (Core Attributes):** This defines the character's default look. Details: [${characterDetails}]
+3.  **Base Korean Scene (For Narrative Context):** Use this to understand the underlying action, emotion, and mood, especially for details not covered by the directives above. Korean Scene: "${sceneText}"
 
-2.  **Generate 'imgPrompt':** Create a highly detailed, comma-separated list of keywords for an image generation AI (like Leonardo AI). This should be a masterpiece-level prompt. Include as many of the following attributes as are relevant and can be creatively inferred from the context. If an attribute is not relevant, omit it.
-    * **Subject & Action:** The main character "${characterDescription}", their specific action, pose, and emotion (e.g., 'determined expression', 'crouching defensively').
-    * **Character Details:** Describe body type, hairstyle, face shape, clothing style, fabric physics (e.g., 'wind-blown cape'), nail style, foot style.
-    * **Composition:** Specify the camera view (e.g., 'dynamic low-angle shot', 'extreme close-up on the eyes', 'cinematic wide shot').
-    * **Setting:** Describe the background, and time of day (e.g., 'golden hour', 'misty morning', 'moonlit night').
-    * **Lighting:** Describe the lighting (e.g., 'dramatic cinematic lighting', 'soft rim light', 'god rays').
-    * **Overall Quality:** Add keywords like 'masterpiece', 'best quality', '8k', 'photorealistic', 'epic', 'insanely detailed'.
-
-3.  **Generate 'videoPrompt':** Create a concise description for a short video clip, focusing on motion and rendering.
-    * **Camera Movement:** Describe the camera work (e.g., 'Slow dolly zoom in on the character's face', 'Fast panning shot following the action', 'Crane shot revealing the landscape').
-    * **Rendering Style:** Specify a rendering engine or style (e.g., 'Rendered in Unreal Engine 5', 'Octane render', 'Pixar animation style', 'Studio Ghibli style', 'cel shading').
-
+**INSTRUCTIONS:**
+1.  **Synthesize:** Combine all the provided information based on the priority above.
+2.  **Generate 'imgPrompt':** Create a comma-separated list of English keywords. It must be detailed and visually rich.
+    - Start with quality descriptors: 'masterpiece, best quality, 8k, photorealistic, ultra-detailed'.
+    - Incorporate all provided directives from the character template and scene specifics.
+    - If a detail (like emotion or action) is not specified in the directives, infer the best option from the Korean scene description.
+    - The final prompt should be a fluid and powerful combination of all details.
+3.  **Generate 'videoPrompt':** Create a concise description for a short video clip, focusing on camera movement and rendering style.
+    - Camera Movement: e.g., 'Slow dolly zoom in on the character's face', 'Fast panning shot following the action'.
+    - Rendering Style: e.g., 'Rendered in Unreal Engine 5', 'Octane render', 'Pixar animation style'.
 4.  **Output Format:** Your final output MUST be a single, valid JSON object with no other text or explanations.
 
-**JSON Output Structure Example:**
+**JSON OUTPUT STRUCTURE:**
 {
   "imgPrompt": "masterpiece, 8k, photorealistic, cinematic lighting, a wise and strong lion king, standing majestically on a cliff edge, overlooking the savanna at golden hour, wind blowing through his magnificent mane, proud expression, dynamic low-angle shot",
   "videoPrompt": "Slow crane shot upwards, revealing the lion king and the vast landscape behind him. Rendered in Unreal Engine 5."

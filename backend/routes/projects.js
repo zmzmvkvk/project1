@@ -199,49 +199,52 @@ router.post("/:projectId/story", async (req, res) => {
   }
 });
 
-// 함수: ms 만큼 기다리는 Promise를 반환 (폴링에 사용)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// [POST] /api/scenes/:sceneId/generate-image - 특정 씬의 이미지 생성
 router.post("/scenes/:sceneId/generate-image", async (req, res) => {
   try {
     const { sceneId } = req.params;
     const { projectId, storyId, settings } = req.body;
 
-    // 1. DB에서 관련 데이터 로드
-    const projectRef = db.collection("projects").doc(projectId);
-    const storyRef = projectRef.collection("stories").doc(storyId);
+    // 1. DB에서 관련 데이터 로드 (Story 데이터까지 함께 로드)
+    const storyRef = db
+      .collection("projects")
+      .doc(projectId)
+      .collection("stories")
+      .doc(storyId);
     const sceneRef = storyRef.collection("scenes").doc(sceneId);
 
-    const [projectDoc, storyDoc, sceneDoc] = await Promise.all([
-      projectRef.get(),
+    const [storyDoc, sceneDoc] = await Promise.all([
       storyRef.get(),
       sceneRef.get(),
     ]);
 
-    if (!sceneDoc.exists) {
-      return res.status(404).send("Scene not found");
-    }
+    if (!sceneDoc.exists) return res.status(404).send("Scene not found");
+    if (!storyDoc.exists) return res.status(404).send("Story not found");
 
-    const projectData = projectDoc.data();
     const storyData = storyDoc.data();
     const sceneData = sceneDoc.data();
 
     let imgPrompt, videoPrompt;
 
-    // 2. 이미지 생성용 프롬프트 결정
-    // 사용자가 프롬프트를 직접 수정해서 보냈다면(재생성 시) 그 값을 사용하고,
-    // 그렇지 않다면(최초 생성 시) ChatGPT를 통해 새로 생성합니다.
+    // 사용자가 프롬프트를 직접 수정한 경우는 그대로 사용
     if (settings && settings.prompt) {
       imgPrompt = settings.prompt;
-      videoPrompt = sceneData.videoPrompt || "Standard shot"; // 비디오 프롬프트는 기존 값 유지
-      console.log("Using user-provided prompt for regeneration.");
+      videoPrompt = sceneData.videoPrompt || "Standard shot";
     } else {
-      console.log("Generating new image and video prompts with AI...");
+      // --- ★★★ 수정된 부분: 고도화된 프롬프트 생성 로직 호출 ★★★ ---
+      console.log("Generating new prompts with advanced settings...");
+
+      // story에서 캐릭터 템플릿, scene에서 씬별 설정을 가져옴
+      const characterTemplate = storyData.characterTemplate || {};
+      const sceneSettings = sceneData.sceneSettings || {};
+
       const promptForPrompts = createImagePrompt(
         sceneData.text,
-        storyData.character
+        characterTemplate,
+        sceneSettings
       );
+
       const promptResponse = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [{ role: "user", content: promptForPrompts }],
@@ -252,9 +255,6 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
       );
       imgPrompt = generatedPrompts.imgPrompt;
       videoPrompt = generatedPrompts.videoPrompt;
-
-      console.log("Generated Image Prompt:", imgPrompt);
-      console.log("Generated Video Prompt:", videoPrompt);
     }
 
     // 3. 백엔드에서 설정값 안정화 처리
@@ -269,7 +269,7 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
     const generationPayload = {
       prompt: imgPrompt,
       modelId:
-        projectData.leonardoModelId || "1e60896f-3c26-4296-8ecc-53e2afecc132",
+        storyData.leonardoModelId || "1e60896f-3c26-4296-8ecc-53e2afecc132",
       width: 1024,
       height: 576,
       num_images: 1,
@@ -297,6 +297,7 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
     let generatedImage = null;
 
     for (let i = 0; i < 20; i++) {
+      // 최대 100초간 폴링
       await sleep(5000);
       const resultResponse = await axios.get(
         `https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`,
@@ -319,20 +320,12 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
       throw new Error("Image generation timed out or failed.");
     }
 
+    // 6. Firestore에 최종 결과 업데이트
     const updatePayload = {
       image_url: generatedImage.url,
       imgPrompt: imgPrompt,
       videoPrompt: videoPrompt,
-
-      sceneSettings: {
-        background: settings.background || null,
-        timeOfDay: settings.timeOfDay || null,
-        action: settings.action || null,
-        emotion: settings.emotion || null,
-        cameraView: settings.cameraView || null,
-        lighting: settings.lighting || null,
-      },
-
+      sceneSettings: settings.sceneSettings || sceneData.sceneSettings || null,
       guidance_scale: sanitizedSettings.guidance_scale,
       controlnets: sanitizedSettings.controlnets,
       elements: sanitizedSettings.elements,
