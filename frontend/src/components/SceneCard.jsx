@@ -4,8 +4,8 @@ import SceneSettingsPanel from "./SceneSettingsPanel";
 
 const SceneCard = ({ scene }) => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isPrompting, setIsPrompting] = useState(false); // 프롬프트 수정 UI 표시 상태
-  const [editablePrompt, setEditablePrompt] = useState(""); // 수정 가능한 프롬프트 상태
+  const [isPrompting, setIsPrompting] = useState(false);
+  const [editablePrompt, setEditablePrompt] = useState("");
 
   const generateImageForScene = useProjectStore(
     (state) => state.generateImageForScene
@@ -14,38 +14,35 @@ const SceneCard = ({ scene }) => {
   const isLoading = loadingSceneId === scene.id;
 
   useEffect(() => {
-    // 씬 데이터가 변경될 때마다 수정용 프롬프트 상태를 초기화합니다.
-    setEditablePrompt(scene.visualPrompt || scene.text);
-  }, [scene.visualPrompt, scene.text]);
+    // --- ★★★ 수정된 부분 ★★★ ---
+    // 이전 'visualPrompt' 필드 대신, 새로운 'imgPrompt' 필드를 참조합니다.
+    setEditablePrompt(scene.imgPrompt || scene.text);
+  }, [scene.imgPrompt, scene.text]); // 의존성 배열도 새 필드명으로 변경
 
-  // --- 핸들러 함수 정리 ---
-
-  // 1. 최초 생성 핸들러 ('이미지 생성' 버튼 클릭 시)
+  // 최초 생성 핸들러
   const handleInitialGeneration = () => {
-    // 프롬프트 수정창 없이 바로 생성 시작
     generateImageForScene(scene.id);
   };
 
-  // 2. 재생성 시작 핸들러 ('재생성' 버튼 클릭 시)
+  // 재생성 시작 핸들러
   const handleStartRegeneration = () => {
-    // 프롬프트 수정창과 상세 설정 패널을 함께 엽니다.
     setIsPrompting(true);
     setIsSettingsOpen(true);
   };
 
-  // 3. 재생성 확정 핸들러 ('생성 확인' 버튼 클릭 시)
+  // 재생성 확정 핸들러
   const handleConfirmRegeneration = () => {
     setIsPrompting(false);
     setIsSettingsOpen(false);
-    // 수정된 프롬프트를 담아 생성 요청
     generateImageForScene(scene.id, { prompt: editablePrompt });
   };
 
-  // 4. 프롬프트 수정 취소 핸들러
+  // 프롬프트 수정 취소 핸들러
   const handleCancelPrompting = () => {
     setIsPrompting(false);
-    // 수정 전의 프롬프트로 복원합니다.
-    setEditablePrompt(scene.visualPrompt || scene.text);
+    // --- ★★★ 수정된 부분 ★★★ ---
+    // 취소 시에도 새로운 'imgPrompt' 필드를 참조하여 복원합니다.
+    setEditablePrompt(scene.imgPrompt || scene.text);
   };
 
   return (
@@ -60,15 +57,12 @@ const SceneCard = ({ scene }) => {
 
         <div className="w-64 h-40 bg-gray-700 rounded-md flex items-center justify-center flex-shrink-0 relative">
           {isLoading ? (
-            // 로딩 UI
             <div className="flex flex-col items-center justify-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
               <p className="text-sm text-gray-400 mt-2">생성 중...</p>
             </div>
           ) : scene.image_url ? (
-            // 이미지가 있을 경우
             isPrompting ? (
-              // 재생성을 위해 프롬프트 수정 중일 때
               <div className="w-full h-full p-2 flex flex-col">
                 <textarea
                   value={editablePrompt}
@@ -91,7 +85,6 @@ const SceneCard = ({ scene }) => {
                 </div>
               </div>
             ) : (
-              // 생성된 이미지만 보일 때
               <>
                 <img
                   src={scene.image_url}
@@ -109,7 +102,6 @@ const SceneCard = ({ scene }) => {
               </>
             )
           ) : (
-            // 이미지가 없을 때 (최초 생성 버튼)
             <button
               onClick={handleInitialGeneration}
               className="bg-green-600 hover:bg-green-700 text-white text-sm font-bold py-1 px-3 rounded"
@@ -119,7 +111,6 @@ const SceneCard = ({ scene }) => {
           )}
         </div>
 
-        {/* 상세 설정 버튼 */}
         <button
           onClick={() => setIsSettingsOpen(!isSettingsOpen)}
           className={`p-2 text-gray-400 hover:text-white rounded-full transition ${

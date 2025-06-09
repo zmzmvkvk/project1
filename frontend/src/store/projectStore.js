@@ -105,12 +105,13 @@ const useProjectStore = create((set, get) => ({
     }
   },
 
-  generateStory: async (projectId, settings) => {
+  generateStory: async (projectId, storySettings) => {
     set({ loading: true, error: null });
     try {
+      // storySettings 객체에는 이제 topic, character, characterTemplate 등이 모두 포함됨
       const response = await axios.post(
         `/api/projects/${projectId}/story`,
-        settings
+        storySettings
       );
       set({
         scenes: response.data.scenes,

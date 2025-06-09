@@ -34,17 +34,53 @@ const characterOptions = [
   },
 ];
 
+// 캐릭터별 상세 템플릿 데이터
+const initialTemplates = {
+  1: {
+    clothingStyle: "royal golden armor with a red cape",
+    bodyType: "large and muscular build",
+    hairstyle: "magnificent, thick mane",
+    faceShape: "strong, square jawline",
+    nailStyle: "sharp, well-maintained claws",
+    footStyle: "large, powerful paws",
+  },
+  2: {
+    clothingStyle: "a simple leaf collar",
+    bodyType: "small and nimble",
+    hairstyle: "scruffy, short fur",
+    faceShape: "rounded and youthful",
+    nailStyle: "small, playful claws",
+    footStyle: "small, cute paws",
+  },
+  3: {
+    clothingStyle: "no clothing, natural feathers",
+    bodyType: "slender bird body",
+    hairstyle: "colorful crest of feathers",
+    faceShape: "long beak, sharp eyes",
+    nailStyle: "sharp talons",
+    footStyle: "thin bird feet",
+  },
+  4: {
+    clothingStyle: "a rugged leather harness",
+    bodyType: "plump and stocky",
+    hairstyle: "a prominent mohawk",
+    faceShape: "wide snout with tusks",
+    nailStyle: "blunt hooves",
+    footStyle: "sturdy hooves",
+  },
+};
+
 const ProjectSettingsPage = () => {
   const { projectId } = useParams();
   const navigate = useNavigate();
 
-  // 스토어 훅
+  // Zustand 스토어 훅 (개별 선택)
   const projects = useProjectStore((state) => state.projects);
-  const scenes = useProjectStore((state) => state.scenes); // 씬 목록을 가져와 스토리 존재 여부 판단
+  const scenes = useProjectStore((state) => state.scenes);
+  const loading = useProjectStore((state) => state.loading);
   const fetchProject = useProjectStore((state) => state.fetchProject);
   const updateProject = useProjectStore((state) => state.updateProject);
   const generateStory = useProjectStore((state) => state.generateStory);
-  const loading = useProjectStore((state) => state.loading);
 
   const project = useMemo(
     () => projects.find((p) => p.id === projectId),
@@ -52,6 +88,7 @@ const ProjectSettingsPage = () => {
   );
   const storyExists = useMemo(() => scenes && scenes.length > 0, [scenes]);
 
+  // 컴포넌트 로컬 상태
   const [globalSettings, setGlobalSettings] = useState({
     defaultGuidanceScale: 7,
     defaultNegativePrompt: "",
@@ -61,12 +98,16 @@ const ProjectSettingsPage = () => {
   const [modelId, setModelId] = useState(
     "1e60896f-3c26-4296-8ecc-53e2afecc132"
   );
-
+  const [allCharacterTemplates, setAllCharacterTemplates] =
+    useState(initialTemplates);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // 데이터 로딩 useEffect
   useEffect(() => {
-    if (!project) fetchProject(projectId);
+    if (!project) {
+      fetchProject(projectId);
+    }
   }, [projectId, project, fetchProject]);
 
   useEffect(() => {
@@ -80,6 +121,18 @@ const ProjectSettingsPage = () => {
       setIsLoading(false);
     }
   }, [project]);
+
+  // 캐릭터 템플릿 변경 핸들러
+  const handleTemplateChange = (e) => {
+    const { name, value } = e.target;
+    setAllCharacterTemplates((prev) => ({
+      ...prev,
+      [selectedCharId]: {
+        ...prev[selectedCharId],
+        [name]: value,
+      },
+    }));
+  };
 
   // 전역 설정만 저장하는 핸들러
   const handleSaveSettings = async () => {
@@ -101,6 +154,7 @@ const ProjectSettingsPage = () => {
     const storySettings = {
       topic,
       character: selectedCharacter.description,
+      characterTemplate: allCharacterTemplates[selectedCharId], // 선택된 캐릭터의 템플릿을 전달
       platform: "youtube",
       leonardoModelId: modelId,
     };
@@ -115,7 +169,6 @@ const ProjectSettingsPage = () => {
 
   if (isLoading)
     return <p className="text-center p-8">프로젝트 설정을 불러오는 중...</p>;
-
   return (
     <div>
       <Link
@@ -232,6 +285,42 @@ const ProjectSettingsPage = () => {
                     <p className="text-center text-sm bg-gray-700 p-2 truncate">
                       {char.name}
                     </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="mt-6 p-4 border border-gray-700 rounded-lg">
+              <h3 className="text-md font-semibold text-gray-200 mb-4">
+                캐릭터 상세 템플릿 설정
+              </h3>
+              {/* --- ★★★ 수정된 부분: 레이블이 포함된 UI 레이아웃 ★★★ --- */}
+              <div className="space-y-3">
+                {[
+                  { name: "clothingStyle", label: "의상 스타일" },
+                  { name: "bodyType", label: "체형" },
+                  { name: "hairstyle", label: "헤어스타일" },
+                  { name: "faceShape", label: "얼굴형" },
+                  { name: "nailStyle", label: "네일 스타일" },
+                  { name: "footStyle", label: "발 스타일" },
+                ].map(({ name, label }) => (
+                  <div
+                    key={name}
+                    className="grid grid-cols-3 items-center gap-4"
+                  >
+                    <label
+                      htmlFor={name}
+                      className="text-sm text-gray-400 text-right"
+                    >
+                      {label}
+                    </label>
+                    <input
+                      id={name}
+                      type="text"
+                      name={name}
+                      value={allCharacterTemplates[selectedCharId][name]}
+                      onChange={handleTemplateChange}
+                      className="col-span-2 bg-gray-700 p-2 rounded-md text-sm"
+                    />
                   </div>
                 ))}
               </div>

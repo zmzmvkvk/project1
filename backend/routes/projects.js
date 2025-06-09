@@ -125,54 +125,42 @@ router.post("/:projectId/story", async (req, res) => {
   let aiResult = "";
   try {
     const { projectId } = req.params;
-    // req.body에서 상세 설정값을 추출합니다.
+    // 요청 본문에서 characterTemplate 객체를 받도록 구조 분해 할당
     const {
       platform = "youtube",
       topic = "A hero's unexpected journey",
-      character = "A brave warrior", // 주인공 설정 기본값
-      leonardoModelId = "6bef9f1b-29cb-40c7-b9df-32b51c1f67d3", // 레오나르도 모델 ID 기본값
+      character = "A brave warrior",
+      characterTemplate = {}, // 캐릭터 템플릿 기본값은 빈 객체
+      leonardoModelId = "1e60896f-3c26-4296-8ecc-53e2afecc132",
     } = req.body;
 
-    // promptService로 모든 설정값을 전달합니다.
     const prompt = createStoryPrompt({ platform, topic, character });
 
-    console.log("Sending prompt to ChatGPT with settings:", {
-      platform,
-      topic,
-      character,
-    });
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
     });
 
     aiResult = response.choices[0].message.content;
-    console.log("Received raw response from ChatGPT:", aiResult);
-
     const scenesData = JSON.parse(aiResult);
-    let sceneArray = null;
-    for (const key in scenesData) {
-      if (Array.isArray(scenesData[key])) {
-        sceneArray = scenesData[key];
-        break;
-      }
+    const sceneArray = scenesData.scenes;
+
+    if (!Array.isArray(sceneArray)) {
+      throw new Error("AI response does not contain a valid 'scenes' array.");
     }
 
-    if (!sceneArray) {
-      throw new Error("AI response does not contain a valid scene array.");
-    }
-
-    // 생성된 스토리를 DB에 저장
+    // DB에 story 문서를 생성할 때 characterTemplate도 함께 저장
     const storyRef = await db
       .collection("projects")
       .doc(projectId)
       .collection("stories")
       .add({
         topic,
-        character, // 설정값도 함께 저장
+        character,
+        characterTemplate, // 여기에 저장
         platform,
-        leonardoModelId, // 설정값도 함께 저장
+        leonardoModelId,
         createdAt: new Date().toISOString(),
         status: "draft",
       });
@@ -182,16 +170,12 @@ router.post("/:projectId/story", async (req, res) => {
     const scenesForResponse = [];
 
     sceneArray.forEach((scene, index) => {
-      if (!scene.text) return;
-      // 각 씬의 프롬프트에는 주인공 정보를 포함시켜 일관성을 높입니다.
-      const visualPrompt = `${scene.text}, character is ${character}, epic cinematic shot, detailed, fantasy art, high quality`;
-
       const sceneDoc = {
         text: scene.text,
         order: index + 1,
         image_url: null,
-        video_url: null,
-        visualPrompt: null,
+        imgPrompt: null,
+        videoPrompt: null,
       };
       const docRef = scenesCollection.doc();
       batch.set(docRef, sceneDoc);
@@ -243,30 +227,37 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
     const storyData = storyDoc.data();
     const sceneData = sceneDoc.data();
 
-    let visualPrompt = "";
+    let imgPrompt, videoPrompt;
 
     // 2. 이미지 생성용 프롬프트 결정
-    // 사용자가 프롬프트를 직접 수정해서 보냈다면 그 값을 사용하고,
-    // 그렇지 않다면 ChatGPT를 통해 새로 생성합니다.
+    // 사용자가 프롬프트를 직접 수정해서 보냈다면(재생성 시) 그 값을 사용하고,
+    // 그렇지 않다면(최초 생성 시) ChatGPT를 통해 새로 생성합니다.
     if (settings && settings.prompt) {
-      visualPrompt = settings.prompt;
+      imgPrompt = settings.prompt;
+      videoPrompt = sceneData.videoPrompt || "Standard shot"; // 비디오 프롬프트는 기존 값 유지
       console.log("Using user-provided prompt for regeneration.");
     } else {
-      console.log("Generating a new visual prompt with AI...");
-      const promptForPrompt = createImagePrompt(
+      console.log("Generating new image and video prompts with AI...");
+      const promptForPrompts = createImagePrompt(
         sceneData.text,
         storyData.character
       );
       const promptResponse = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: promptForPrompt }],
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: promptForPrompts }],
+        response_format: { type: "json_object" },
       });
-      visualPrompt = promptResponse.choices[0].message.content.trim();
+      const generatedPrompts = JSON.parse(
+        promptResponse.choices[0].message.content
+      );
+      imgPrompt = generatedPrompts.imgPrompt;
+      videoPrompt = generatedPrompts.videoPrompt;
+
+      console.log("Generated Image Prompt:", imgPrompt);
+      console.log("Generated Video Prompt:", videoPrompt);
     }
-    console.log("Final Visual Prompt:", visualPrompt);
 
     // 3. 백엔드에서 설정값 안정화 처리
-    // 프론트에서 어떤 값이 오든 안전하게 처리합니다.
     const sanitizedSettings = {
       guidance_scale: settings.guidance_scale || 7,
       controlnets: settings.controlnets || [],
@@ -276,7 +267,7 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
 
     // 4. Leonardo AI API에 보낼 최종 데이터 구성
     const generationPayload = {
-      prompt: visualPrompt,
+      prompt: imgPrompt,
       modelId:
         projectData.leonardoModelId || "1e60896f-3c26-4296-8ecc-53e2afecc132",
       width: 1024,
@@ -288,7 +279,6 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
       negative_prompt: sanitizedSettings.negative_prompt,
     };
 
-    // Leonardo API는 빈 배열이나 빈 문자열을 보내면 오류를 일으킬 수 있으므로, 해당 속성을 제거합니다.
     if (generationPayload.controlnets.length === 0)
       delete generationPayload.controlnets;
     if (generationPayload.elements.length === 0)
@@ -307,7 +297,6 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
     let generatedImage = null;
 
     for (let i = 0; i < 20; i++) {
-      // 최대 100초간 폴링
       await sleep(5000);
       const resultResponse = await axios.get(
         `https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`,
@@ -330,11 +319,20 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
       throw new Error("Image generation timed out or failed.");
     }
 
-    // 6. Firestore에 최종 결과 업데이트
-    // sanitizedSettings를 사용해 'undefined'가 절대 들어가지 않도록 보장합니다.
     const updatePayload = {
       image_url: generatedImage.url,
-      visualPrompt: visualPrompt, // 생성에 사용된 프롬프트를 저장
+      imgPrompt: imgPrompt,
+      videoPrompt: videoPrompt,
+
+      sceneSettings: {
+        background: settings.background || null,
+        timeOfDay: settings.timeOfDay || null,
+        action: settings.action || null,
+        emotion: settings.emotion || null,
+        cameraView: settings.cameraView || null,
+        lighting: settings.lighting || null,
+      },
+
       guidance_scale: sanitizedSettings.guidance_scale,
       controlnets: sanitizedSettings.controlnets,
       elements: sanitizedSettings.elements,
