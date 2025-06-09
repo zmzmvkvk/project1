@@ -1,6 +1,7 @@
-import { Routes, Route } from 'react-router-dom';
-import DashboardPage from './pages/DashboardPage';
-import StoryEditorPage from './pages/StoryEditorPage';
+import { Routes, Route } from "react-router-dom";
+import DashboardPage from "./pages/DashboardPage";
+import StoryEditorPage from "./pages/StoryEditorPage";
+import ProjectSettingsPage from "./pages/ProjectSettingsPage";
 
 function App() {
   return (
@@ -9,6 +10,10 @@ function App() {
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/project/:projectId" element={<StoryEditorPage />} />
+          <Route
+            path="/project/:projectId/settings"
+            element={<ProjectSettingsPage />}
+          />
         </Routes>
       </div>
     </div>

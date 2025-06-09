@@ -1,20 +1,18 @@
-import React, { useState, useEffect } from "react"; // useState 임포트
+import React, { useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import useProjectStore from "../store/projectStore";
 import SceneCard from "../components/SceneCard";
-import StoryGenerationModal from "../components/StoryGenerationModal"; // 모달 임포트
 
 const StoryEditorPage = () => {
   const { projectId } = useParams();
-  const [isModalOpen, setIsModalOpen] = useState(false); // 모달 표시 상태
 
+  // Zustand 스토어에서 필요한 상태와 액션을 개별적으로 선택
   const scenes = useProjectStore((state) => state.scenes);
   const loading = useProjectStore((state) => state.loading);
   const error = useProjectStore((state) => state.error);
   const fetchStory = useProjectStore((state) => state.fetchStory);
   const updateSceneOrder = useProjectStore((state) => state.updateSceneOrder);
-  const generateStory = useProjectStore((state) => state.generateStory);
 
   useEffect(() => {
     if (projectId) {
@@ -30,35 +28,20 @@ const StoryEditorPage = () => {
     updateSceneOrder(items);
   };
 
-  // 모달에서 'Generate Story' 버튼 클릭 시 호출될 함수
-  const handleGenerateStorySubmit = async (settings) => {
-    if (projectId) {
-      await generateStory(projectId, settings);
-      setIsModalOpen(false); // 생성이 시작되면 모달을 닫습니다.
-    }
-  };
-
   return (
     <div>
-      {/* 설정 모달 */}
-      <StoryGenerationModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSubmit={handleGenerateStorySubmit}
-        loading={loading}
-      />
-
-      <Link to="/" className="text-blue-400 hover:underline mb-6 inline-block">
-        &larr; Back to Dashboard
-      </Link>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-8">
+        <Link to="/" className="text-blue-400 hover:underline">
+          &larr; Dashboard
+        </Link>
         <h1 className="text-4xl font-bold">Story Editor</h1>
-        <button
-          onClick={() => setIsModalOpen(true)} // 버튼 클릭 시 모달을 엽니다.
-          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+        {/* '새 스토리 생성 설정' 페이지로 이동하는 링크 */}
+        <Link
+          to={`/project/${projectId}/settings`}
+          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition"
         >
-          Generate Story with AI
-        </button>
+          새 스토리 생성 설정
+        </Link>
       </div>
 
       {loading && scenes.length === 0 && (
@@ -70,7 +53,8 @@ const StoryEditorPage = () => {
         <div className="text-center py-10 border-2 border-dashed border-gray-700 rounded-lg">
           <p className="text-gray-400">생성된 스토리가 없습니다.</p>
           <p className="text-gray-500 mt-2">
-            위의 'Generate Story with AI' 버튼을 눌러 새 스토리를 생성해보세요.
+            우측 상단의 '새 스토리 생성 설정' 버튼을 눌러 새 스토리를
+            만들어보세요.
           </p>
         </div>
       )}

@@ -44,6 +44,41 @@ router.post("/", async (req, res) => {
   }
 });
 
+// [GET] /api/projects/:projectId - 특정 프로젝트 상세 정보 가져오기
+router.get("/:projectId", async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const doc = await db.collection("projects").doc(projectId).get();
+    if (!doc.exists) {
+      return res.status(404).send("Project not found");
+    }
+    res.status(200).json({ id: doc.id, ...doc.data() });
+  } catch (error) {
+    console.error("Error fetching project:", error);
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+// [PUT] /api/projects/:projectId - 특정 프로젝트 정보 수정 (설정 업데이트)
+router.put("/:projectId", async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const settings = req.body; // { defaultGuidanceScale, defaultNegativePrompt }
+
+    const projectRef = db.collection("projects").doc(projectId);
+    await projectRef.update({
+      ...settings,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const updatedDoc = await projectRef.get();
+    res.status(200).json({ id: updatedDoc.id, ...updatedDoc.data() });
+  } catch (error) {
+    console.error("Error updating project:", error);
+    res.status(500).send("Internal Server Error");
+  }
+});
+
 // [GET] /api/projects/:projectId/stories - 특정 프로젝트의 스토리 목록 가져오기
 router.get("/:projectId/stories", async (req, res) => {
   try {
@@ -184,9 +219,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 router.post("/scenes/:sceneId/generate-image", async (req, res) => {
   try {
     const { sceneId } = req.params;
-    const { storyId, projectId } = req.body; // 나중에 씬 정보에서 가져오도록 수정 가능
+    const { projectId, storyId, settings } = req.body;
 
-    // 1. Firestore에서 씬 텍스트 가져오기 (실제로는 projectId, storyId도 필요)
     const sceneRef = db
       .collection("projects")
       .doc(projectId)
@@ -198,37 +232,47 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
     if (!sceneDoc.exists) {
       return res.status(404).send("Scene not found");
     }
-    const sceneText = sceneDoc.data().text;
+    const sceneData = sceneDoc.data();
 
-    // 2. Leonardo.AI에 이미지 생성 요청
+    const promptText =
+      sceneData.visualPrompt ||
+      `${sceneData.text}, epic cinematic shot, detailed, fantasy art, high quality`;
+
+    const generationPayload = {
+      prompt: promptText,
+      modelId: "1e60896f-3c26-4296-8ecc-53e2afecc132",
+      width: 1024,
+      height: 576,
+      num_images: 1,
+      guidance_scale: settings.guidance_scale,
+      controlnets: settings.controlnets,
+      elements: settings.elements,
+    };
+
+    Object.keys(generationPayload).forEach(
+      (key) =>
+        (generationPayload[key] === undefined ||
+          generationPayload[key] === null ||
+          (Array.isArray(generationPayload[key]) &&
+            generationPayload[key].length === 0)) &&
+        delete generationPayload[key]
+    );
+
     const generationResponse = await axios.post(
       "https://cloud.leonardo.ai/api/rest/v1/generations",
-      {
-        prompt: `${sceneText}, epic cinematic shot, detailed, fantasy art, high quality`,
-        modelId: "6bef9f1b-29cb-40c7-b9df-32b51c1f67d3", // Leonardo Diffusion XL
-        width: 1024,
-        height: 576,
-        num_images: 1,
-      },
-      {
-        headers: {
-          authorization: `Bearer ${process.env.LEONARDO_API_KEY}`,
-        },
-      }
+      generationPayload,
+      { headers: { authorization: `Bearer ${process.env.LEONARDO_API_KEY}` } }
     );
 
     const generationId = generationResponse.data.sdGenerationJob.generationId;
 
-    // 3. 생성 완료될 때까지 폴링(Polling)
     let generatedImage = null;
     for (let i = 0; i < 20; i++) {
-      // 최대 20번 시도 (약 100초)
-      await sleep(5000); // 5초 대기
+      await sleep(5000);
       const resultResponse = await axios.get(
         `https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`,
         { headers: { authorization: `Bearer ${process.env.LEONARDO_API_KEY}` } }
       );
-
       const generationResult = resultResponse.data.generations_by_pk;
       if (generationResult && generationResult.status === "COMPLETE") {
         generatedImage = generationResult.generated_images[0];
@@ -240,10 +284,16 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
       throw new Error("Image generation timed out or failed.");
     }
 
-    // 4. Firestore에 이미지 URL 업데이트
-    await sceneRef.update({ image_url: generatedImage.url });
+    const finalSceneData = {
+      ...sceneData,
+      image_url: generatedImage.url,
+      guidance_scale: settings.guidance_scale,
+      controlnets: settings.controlnets,
+      elements: settings.elements,
+    };
+    await sceneRef.update(finalSceneData);
 
-    res.status(200).json({ ...sceneDoc.data(), image_url: generatedImage.url });
+    res.status(200).json(finalSceneData);
   } catch (error) {
     console.error(
       "Error generating image:",
