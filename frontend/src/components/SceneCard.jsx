@@ -15,31 +15,33 @@ const SceneCard = ({ scene }) => {
 
   useEffect(() => {
     // 씬 데이터가 변경될 때마다 수정용 프롬프트 상태를 초기화합니다.
-    // DB에 저장된 visualPrompt가 있으면 그것을, 없으면 씬의 텍스트를 기본 프롬프트로 사용합니다.
     setEditablePrompt(scene.visualPrompt || scene.text);
   }, [scene.visualPrompt, scene.text]);
 
-  // '이미지 생성' 또는 '재생성' 버튼을 눌렀을 때의 핸들러
-  const handleStartEditing = () => {
-    setIsPrompting(true);
-    // 재생성 시에는 상세 설정 패널도 함께 열어줍니다.
-    if (scene.image_url) {
-      setIsSettingsOpen(true);
-    }
+  // --- 핸들러 함수 정리 ---
+
+  // 1. 최초 생성 핸들러 ('이미지 생성' 버튼 클릭 시)
+  const handleInitialGeneration = () => {
+    // 프롬프트 수정창 없이 바로 생성 시작
+    generateImageForScene(scene.id);
   };
 
-  // 최종적으로 '생성 확인' 버튼을 눌렀을 때의 핸들러
-  const handleConfirmGeneration = () => {
+  // 2. 재생성 시작 핸들러 ('재생성' 버튼 클릭 시)
+  const handleStartRegeneration = () => {
+    // 프롬프트 수정창과 상세 설정 패널을 함께 엽니다.
+    setIsPrompting(true);
+    setIsSettingsOpen(true);
+  };
+
+  // 3. 재생성 확정 핸들러 ('생성 확인' 버튼 클릭 시)
+  const handleConfirmRegeneration = () => {
     setIsPrompting(false);
     setIsSettingsOpen(false);
-
-    // 수정된 프롬프트를 settings 객체에 담아 스토어 액션을 호출합니다.
-    // SceneSettingsPanel에서 변경된 다른 설정들은 scene 객체에 이미 반영되어 있으므로,
-    // 스토어 액션이 이를 함께 처리합니다.
+    // 수정된 프롬프트를 담아 생성 요청
     generateImageForScene(scene.id, { prompt: editablePrompt });
   };
 
-  // 프롬프트 수정을 취소했을 때의 핸들러
+  // 4. 프롬프트 수정 취소 핸들러
   const handleCancelPrompting = () => {
     setIsPrompting(false);
     // 수정 전의 프롬프트로 복원합니다.
@@ -56,59 +58,60 @@ const SceneCard = ({ scene }) => {
           <p className="text-gray-300">{scene.text}</p>
         </div>
 
-        {/* --- 이미지 및 버튼 영역 --- */}
         <div className="w-64 h-40 bg-gray-700 rounded-md flex items-center justify-center flex-shrink-0 relative">
           {isLoading ? (
-            // 1. 로딩 중 UI
+            // 로딩 UI
             <div className="flex flex-col items-center justify-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
               <p className="text-sm text-gray-400 mt-2">생성 중...</p>
             </div>
-          ) : isPrompting ? (
-            // 2. 프롬프트 수정 UI
-            <div className="w-full h-full p-2 flex flex-col">
-              <textarea
-                value={editablePrompt}
-                onChange={(e) => setEditablePrompt(e.target.value)}
-                className="w-full flex-grow bg-gray-900 text-xs text-white rounded-md p-2 border border-blue-500 focus:ring-2 focus:ring-blue-400"
-                placeholder="이미지 생성을 위한 프롬프트를 입력하세요..."
-              />
-              <div className="flex justify-end space-x-2 mt-2">
-                <button
-                  onClick={handleCancelPrompting}
-                  className="bg-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-500"
-                >
-                  취소
-                </button>
-                <button
-                  onClick={handleConfirmGeneration}
-                  className="bg-green-600 text-xs px-2 py-1 rounded hover:bg-green-500"
-                >
-                  생성 확인
-                </button>
-              </div>
-            </div>
           ) : scene.image_url ? (
-            // 3. 생성된 이미지 및 재생성 버튼
-            <>
-              <img
-                src={scene.image_url}
-                alt={`Scene ${scene.order}`}
-                className="w-full h-full object-cover rounded-md"
-              />
-              <div className="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300">
-                <button
-                  onClick={handleStartEditing}
-                  className="bg-blue-600 text-white text-sm font-bold py-1 px-3 rounded hover:bg-blue-500"
-                >
-                  재생성
-                </button>
+            // 이미지가 있을 경우
+            isPrompting ? (
+              // 재생성을 위해 프롬프트 수정 중일 때
+              <div className="w-full h-full p-2 flex flex-col">
+                <textarea
+                  value={editablePrompt}
+                  onChange={(e) => setEditablePrompt(e.target.value)}
+                  className="w-full flex-grow bg-gray-900 text-xs text-white rounded-md p-2 border border-blue-500 focus:ring-2 focus:ring-blue-400"
+                />
+                <div className="flex justify-end space-x-2 mt-2">
+                  <button
+                    onClick={handleCancelPrompting}
+                    className="bg-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-500"
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={handleConfirmRegeneration}
+                    className="bg-green-600 text-xs px-2 py-1 rounded hover:bg-green-500"
+                  >
+                    생성 확인
+                  </button>
+                </div>
               </div>
-            </>
+            ) : (
+              // 생성된 이미지만 보일 때
+              <>
+                <img
+                  src={scene.image_url}
+                  alt={`Scene ${scene.order}`}
+                  className="w-full h-full object-cover rounded-md"
+                />
+                <div className="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300">
+                  <button
+                    onClick={handleStartRegeneration}
+                    className="bg-blue-600 text-white text-sm font-bold py-1 px-3 rounded hover:bg-blue-500"
+                  >
+                    재생성
+                  </button>
+                </div>
+              </>
+            )
           ) : (
-            // 4. 최초 이미지 생성 버튼
+            // 이미지가 없을 때 (최초 생성 버튼)
             <button
-              onClick={handleStartEditing}
+              onClick={handleInitialGeneration}
               className="bg-green-600 hover:bg-green-700 text-white text-sm font-bold py-1 px-3 rounded"
             >
               이미지 생성
@@ -147,7 +150,6 @@ const SceneCard = ({ scene }) => {
         </button>
       </div>
 
-      {/* 상세 설정 패널 */}
       {isSettingsOpen && <SceneSettingsPanel scene={scene} />}
     </div>
   );

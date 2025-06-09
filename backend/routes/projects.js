@@ -142,7 +142,7 @@ router.post("/:projectId/story", async (req, res) => {
       character,
     });
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
     });
@@ -191,7 +191,7 @@ router.post("/:projectId/story", async (req, res) => {
         order: index + 1,
         image_url: null,
         video_url: null,
-        visualPrompt: visualPrompt, // 이미지 생성을 위한 프롬프트도 저장
+        visualPrompt: null,
       };
       const docRef = scenesCollection.doc();
       batch.set(docRef, sceneDoc);
@@ -248,8 +248,9 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
     // 2. 이미지 생성용 프롬프트 결정
     // 사용자가 프롬프트를 직접 수정해서 보냈다면 그 값을 사용하고,
     // 그렇지 않다면 ChatGPT를 통해 새로 생성합니다.
-    if (settings.prompt) {
+    if (settings && settings.prompt) {
       visualPrompt = settings.prompt;
+      console.log("Using user-provided prompt for regeneration.");
     } else {
       console.log("Generating a new visual prompt with AI...");
       const promptForPrompt = createImagePrompt(
@@ -257,12 +258,12 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
         storyData.character
       );
       const promptResponse = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         messages: [{ role: "user", content: promptForPrompt }],
       });
       visualPrompt = promptResponse.choices[0].message.content.trim();
-      console.log("Generated Visual Prompt:", visualPrompt);
     }
+    console.log("Final Visual Prompt:", visualPrompt);
 
     // 3. 백엔드에서 설정값 안정화 처리
     // 프론트에서 어떤 값이 오든 안전하게 처리합니다.
