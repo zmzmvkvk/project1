@@ -40,6 +40,7 @@ const ProjectSettingsPage = () => {
 
   // 스토어 훅
   const projects = useProjectStore((state) => state.projects);
+  const scenes = useProjectStore((state) => state.scenes); // 씬 목록을 가져와 스토리 존재 여부 판단
   const fetchProject = useProjectStore((state) => state.fetchProject);
   const updateProject = useProjectStore((state) => state.updateProject);
   const generateStory = useProjectStore((state) => state.generateStory);
@@ -49,14 +50,12 @@ const ProjectSettingsPage = () => {
     () => projects.find((p) => p.id === projectId),
     [projects, projectId]
   );
+  const storyExists = useMemo(() => scenes && scenes.length > 0, [scenes]);
 
-  // 전역 설정을 위한 state
   const [globalSettings, setGlobalSettings] = useState({
     defaultGuidanceScale: 7,
-    defaultNegativePrompt: "blurry, low quality, watermark, text",
+    defaultNegativePrompt: "",
   });
-
-  // 새 스토리 생성을 위한 state
   const [topic, setTopic] = useState("A brave lion becomes king");
   const [selectedCharId, setSelectedCharId] = useState(1);
   const [modelId, setModelId] = useState(
@@ -67,9 +66,7 @@ const ProjectSettingsPage = () => {
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
-    if (!project) {
-      fetchProject(projectId);
-    }
+    if (!project) fetchProject(projectId);
   }, [projectId, project, fetchProject]);
 
   useEffect(() => {
@@ -84,14 +81,20 @@ const ProjectSettingsPage = () => {
     }
   }, [project]);
 
-  // --- 수정된 통합 핸들러 ---
+  // 전역 설정만 저장하는 핸들러
+  const handleSaveSettings = async () => {
+    setIsProcessing(true);
+    await updateProject(projectId, globalSettings);
+    setIsProcessing(false);
+    alert("프로젝트 기본 설정이 저장되었습니다.");
+    navigate(`/project/${projectId}`);
+  };
+
+  // 설정 저장과 스토리 생성을 함께하는 핸들러
   const handleSaveAndGenerate = async () => {
     setIsProcessing(true);
-
-    // 1. 전역 기본 설정 저장
     await updateProject(projectId, globalSettings);
 
-    // 2. 새 스토리 생성
     const selectedCharacter = characterOptions.find(
       (c) => c.id === selectedCharId
     );
@@ -110,9 +113,8 @@ const ProjectSettingsPage = () => {
     navigate(`/project/${projectId}`);
   };
 
-  if (isLoading) {
+  if (isLoading)
     return <p className="text-center p-8">프로젝트 설정을 불러오는 중...</p>;
-  }
 
   return (
     <div>
@@ -122,9 +124,12 @@ const ProjectSettingsPage = () => {
       >
         &larr; Back to Story Editor
       </Link>
-      <h1 className="text-4xl font-bold mb-8">프로젝트 및 스토리 설정</h1>
+      {/* 스토리 존재 여부에 따라 페이지 제목 변경 */}
+      <h1 className="text-4xl font-bold mb-8">
+        {storyExists ? "프로젝트 설정" : "프로젝트 및 스토리 생성 설정"}
+      </h1>
 
-      {/* --- 1. 전역 기본 설정 섹션 --- */}
+      {/* --- 1. 전역 기본 설정 섹션 (항상 표시) --- */}
       <div className="mb-12">
         <h2 className="text-2xl font-semibold mb-2 border-b border-gray-600 pb-2">
           전역 기본 설정
@@ -178,94 +183,108 @@ const ProjectSettingsPage = () => {
         </div>
       </div>
 
-      {/* --- 2. 새 스토리 생성 섹션 --- */}
-      <div>
-        <h2 className="text-2xl font-semibold mb-2 border-b border-gray-600 pb-2">
-          새 스토리 생성
-        </h2>
-        <p className="text-gray-400 mb-6">
-          아래 설정을 기반으로 새로운 스토리를 생성합니다.
-        </p>
-        <div className="space-y-8 max-w-3xl bg-gray-800 p-8 rounded-lg">
-          <div>
-            <label
-              htmlFor="topic"
-              className="block text-lg font-medium text-gray-200 mb-2"
-            >
-              1. 스토리 주제 / 아이디어
-            </label>
-            <textarea
-              id="topic"
-              rows="3"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-lg font-medium text-gray-200 mb-2">
-              2. 메인 캐릭터 선택
-            </label>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {characterOptions.map((char) => (
-                <div
-                  key={char.id}
-                  onClick={() => setSelectedCharId(char.id)}
-                  className={`cursor-pointer rounded-lg overflow-hidden border-2 transform transition-transform duration-200 hover:scale-105 ${
-                    selectedCharId === char.id
-                      ? "border-blue-500 ring-2 ring-blue-500"
-                      : "border-gray-600 hover:border-gray-400"
-                  }`}
-                >
-                  <img
-                    src={char.imageUrl}
-                    alt={char.name}
-                    className="w-full h-40 object-cover"
-                  />
-                  <p className="text-center text-sm bg-gray-700 p-2 truncate">
-                    {char.name}
-                  </p>
-                </div>
-              ))}
+      {/* --- 2. 새 스토리 생성 섹션 (스토리가 없을 때만 표시) --- */}
+      {!storyExists && (
+        <div>
+          <h2 className="text-2xl font-semibold mb-2 border-b border-gray-600 pb-2">
+            새 스토리 생성
+          </h2>
+          <p className="text-gray-400 mb-6">
+            아래 설정을 기반으로 새로운 스토리를 생성합니다.
+          </p>
+          <div className="space-y-8 max-w-3xl bg-gray-800 p-8 rounded-lg">
+            {/* Topic, Character, Style UI */}
+            <div>
+              <label
+                htmlFor="topic"
+                className="block text-lg font-medium text-gray-200 mb-2"
+              >
+                1. 스토리 주제 / 아이디어
+              </label>
+              <textarea
+                id="topic"
+                rows="3"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-lg font-medium text-gray-200 mb-2">
+                2. 메인 캐릭터 선택
+              </label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {characterOptions.map((char) => (
+                  <div
+                    key={char.id}
+                    onClick={() => setSelectedCharId(char.id)}
+                    className={`cursor-pointer rounded-lg overflow-hidden border-2 transform transition-transform duration-200 hover:scale-105 ${
+                      selectedCharId === char.id
+                        ? "border-blue-500 ring-2 ring-blue-500"
+                        : "border-gray-600 hover:border-gray-400"
+                    }`}
+                  >
+                    <img
+                      src={char.imageUrl}
+                      alt={char.name}
+                      className="w-full h-40 object-cover"
+                    />
+                    <p className="text-center text-sm bg-gray-700 p-2 truncate">
+                      {char.name}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label
+                htmlFor="leonardo-model"
+                className="block text-lg font-medium text-gray-200 mb-2"
+              >
+                3. 비주얼 스타일 (AI 모델)
+              </label>
+              <select
+                id="leonardo-model"
+                value={modelId}
+                onChange={(e) => setModelId(e.target.value)}
+                className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 focus:ring-blue-500"
+              >
+                <option value="1e60896f-3c26-4296-8ecc-53e2afecc132">
+                  Leonardo Diffusion XL
+                </option>
+                <option value="b7aa9931-a5de-427c-99c0-3d7751508a8f">
+                  3D Animation Style
+                </option>
+                <option value="ac614f96-1082-45bf-be9d-757f2d31c174">
+                  DreamShaper v7
+                </option>
+              </select>
             </div>
           </div>
-          <div>
-            <label
-              htmlFor="leonardo-model"
-              className="block text-lg font-medium text-gray-200 mb-2"
-            >
-              3. 비주얼 스타일 (AI 모델)
-            </label>
-            <select
-              id="leonardo-model"
-              value={modelId}
-              onChange={(e) => setModelId(e.target.value)}
-              className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 focus:ring-blue-500"
-            >
-              <option value="1e60896f-3c26-4296-8ecc-53e2afecc132">
-                Leonardo Diffusion XL
-              </option>
-              <option value="b7aa9931-a5de-427c-99c0-3d7751508a8f">
-                3D Animation Style
-              </option>
-              <option value="ac614f96-1082-45bf-be9d-757f2d31c174">
-                DreamShaper v7
-              </option>
-            </select>
-          </div>
-          {/* --- 통합된 최종 버튼 --- */}
-          <div className="pt-4 text-right">
-            <button
-              onClick={handleSaveAndGenerate}
-              disabled={isProcessing || loading}
-              className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg disabled:bg-gray-500 text-lg"
-            >
-              {isProcessing || loading
-                ? "처리 중..."
-                : "설정 저장 및 스토리 생성"}
-            </button>
-          </div>
         </div>
+      )}
+
+      {/* --- 최종 액션 버튼 (상황에 따라 다른 기능 수행) --- */}
+      <div className="mt-8 pt-4 text-center">
+        {storyExists ? (
+          <button
+            onClick={handleSaveSettings}
+            disabled={isProcessing}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg disabled:bg-gray-500 text-lg"
+          >
+            {isProcessing ? "저장 중..." : "프로젝트 설정 저장"}
+          </button>
+        ) : (
+          <button
+            onClick={handleSaveAndGenerate}
+            disabled={isProcessing || loading}
+            className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg disabled:bg-gray-500 text-lg"
+          >
+            {isProcessing || loading
+              ? "처리 중..."
+              : "설정 저장 및 스토리 생성"}
+          </button>
+        )}
       </div>
     </div>
   );

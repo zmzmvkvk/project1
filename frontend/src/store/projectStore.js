@@ -73,11 +73,9 @@ const useProjectStore = create((set, get) => ({
       currentProject: null,
     });
     try {
-      // 1. 프로젝트 전체 정보(설정값 포함)를 불러와 스토어에 저장
       const projectResponse = await axios.get(`/api/projects/${projectId}`);
       set({ currentProject: projectResponse.data });
 
-      // 2. 기존 로직 실행
       const storiesResponse = await axios.get(
         `/api/projects/${projectId}/stories`
       );
@@ -152,9 +150,9 @@ const useProjectStore = create((set, get) => ({
       ...settings,
     };
 
-    if (finalSettings.controlnets?.length === 0)
-      delete finalSettings.controlnets;
-    if (finalSettings.elements?.length === 0) delete finalSettings.elements;
+    // if (finalSettings.controlnets?.length === 0)
+    //   delete finalSettings.controlnets;
+    // if (finalSettings.elements?.length === 0) delete finalSettings.elements;
 
     try {
       const response = await axios.post(
