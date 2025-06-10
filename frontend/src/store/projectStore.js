@@ -10,6 +10,7 @@ const useProjectStore = create((set, get) => ({
   currentProjectId: null,
   currentStoryId: null,
   currentProject: null,
+  currentStory: null, // 현재 스토리의 모든 정보를 담을 상태 추가
 
   fetchStory: async (projectId) => {
     set({
@@ -19,6 +20,7 @@ const useProjectStore = create((set, get) => ({
       currentProjectId: projectId,
       currentStoryId: null,
       currentProject: null,
+      currentStory: null, // 초기화 추가
     });
     try {
       const projectResponse = await axios.get(`/api/projects/${projectId}`);
@@ -29,7 +31,8 @@ const useProjectStore = create((set, get) => ({
       );
       if (storiesResponse.data && storiesResponse.data.length > 0) {
         const firstStory = storiesResponse.data[0];
-        set({ currentStoryId: firstStory.id });
+        set({ currentStoryId: firstStory.id, currentStory: firstStory });
+
         const scenesResponse = await axios.get(
           `/api/projects/${projectId}/stories/${firstStory.id}/scenes`
         );
@@ -44,7 +47,13 @@ const useProjectStore = create((set, get) => ({
   },
 
   generateImageForScene: async (sceneId, settings = {}) => {
-    const { currentProjectId, currentStoryId, scenes, currentProject } = get();
+    const {
+      currentProjectId,
+      currentStoryId,
+      scenes,
+      currentProject,
+      currentStory,
+    } = get();
     const sceneToGenerate = scenes.find((s) => s.id === sceneId);
 
     if (!currentProjectId || !currentStoryId || !sceneToGenerate) {
@@ -58,6 +67,7 @@ const useProjectStore = create((set, get) => ({
     const finalSettings = {
       guidance_scale: currentProject?.defaultGuidanceScale || 7,
       negative_prompt: currentProject?.defaultNegativePrompt || "",
+      ...currentStory,
       ...sceneToGenerate,
       ...settings,
     };

@@ -226,6 +226,9 @@ router.post("/:projectId/story", async (req, res) => {
         presetStyle, // Preset Style 저장
         createdAt: new Date().toISOString(),
         status: "draft",
+        alchemy,
+        photoReal,
+        contrast,
       });
 
     const scenesCollection = storyRef.collection("scenes");
@@ -307,9 +310,10 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
     const generationPayload = {
       prompt: imgPrompt,
       modelId: storyData.leonardoModelId,
-      width: 1024,
-      height: 576,
+      width: 720,
+      height: 1280,
       num_images: 1,
+      alchemy: storyData.alchemy ?? true,
       guidance_scale: settings.guidance_scale || 7,
       controlnets: settings.controlnets || [],
       elements: settings.elements || [],
@@ -320,9 +324,11 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
       if (modelInfo.type === "sdxl") {
         if (storyData.presetStyle)
           generationPayload.presetStyle = storyData.presetStyle;
+        if (storyData.photoReal === true) generationPayload.photoReal = true;
       } else if (["flux", "phoenix", "lucid"].includes(modelInfo.type)) {
         if (storyData.styleUUID)
           generationPayload.styleUUID = storyData.styleUUID;
+        if (storyData.contrast) generationPayload.contrast = storyData.contrast;
       }
     }
 

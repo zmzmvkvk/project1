@@ -208,9 +208,16 @@ const ProjectSettingsPage = () => {
 
   const handleSettingChange = (e) => {
     const { name, value, type, checked } = e.target;
+    const finalValue =
+      type === "checkbox"
+        ? checked
+        : name === "contrast"
+        ? parseFloat(value)
+        : value; // contrast 값일 경우 숫자로 변환
+
     setStoryGenSettings((prev) => ({
       ...prev,
-      [name]: type === "checkbox" ? checked : value,
+      [name]: finalValue,
     }));
   };
 
@@ -405,7 +412,7 @@ const ProjectSettingsPage = () => {
                         id={name}
                         type="text"
                         name={name}
-                        value={storyGenSettings.characterTemplate[name]}
+                        value={storyGenSettings.characterTemplate[name] || ""}
                         onChange={handleTemplateChange}
                         className="col-span-2 bg-gray-700 p-2 rounded-md text-sm"
                       />
@@ -431,6 +438,9 @@ const ProjectSettingsPage = () => {
                 ))}
               </select>
               <div className="mt-4 p-4 border border-gray-700 rounded-lg space-y-4">
+                <h4 className="text-md font-semibold text-gray-200 mb-3">
+                  스타일 상세 설정
+                </h4>
                 {selectedModel?.type === "sdxl" && (
                   <div>
                     <label
@@ -478,31 +488,72 @@ const ProjectSettingsPage = () => {
                     </select>
                   </div>
                 )}
-                <div className="flex items-center space-x-4">
-                  <label className="flex items-center text-sm">
-                    <input
-                      type="checkbox"
-                      name="alchemy"
-                      checked={storyGenSettings.alchemy}
-                      onChange={handleSettingChange}
-                      className="mr-2"
-                    />{" "}
-                    Alchemy
-                  </label>
-                  {selectedModel?.type === "sdxl" && (
-                    <label className="flex items-center text-sm">
+                <div className="pt-4 border-t border-gray-700">
+                  <h5 className="text-sm font-semibold text-gray-300 mb-3">
+                    고급 옵션
+                  </h5>
+                  <div className="space-y-3">
+                    <label className="flex items-center text-sm cursor-pointer">
                       <input
                         type="checkbox"
-                        name="photoReal"
-                        checked={storyGenSettings.photoReal}
+                        name="alchemy"
+                        checked={storyGenSettings.alchemy}
                         onChange={handleSettingChange}
-                        className="mr-2"
+                        className="w-4 h-4 mr-2"
                       />{" "}
-                      PhotoReal
+                      Alchemy (품질 향상)
                     </label>
-                  )}
+                    {selectedModel?.type === "sdxl" && (
+                      <label className="flex items-center text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          name="photoReal"
+                          checked={storyGenSettings.photoReal}
+                          onChange={handleSettingChange}
+                          className="mr-2"
+                        />{" "}
+                        PhotoReal (실사 표현)
+                      </label>
+                    )}
+                    {(selectedModel?.type === "flux" ||
+                      selectedModel?.type === "phoenix") && (
+                      <div>
+                        <label
+                          htmlFor="contrast"
+                          className="block text-sm font-medium text-gray-300"
+                        >
+                          Contrast:{" "}
+                          <span className="font-bold">
+                            {storyGenSettings.contrast.toFixed(2)}
+                          </span>
+                        </label>
+                        <input
+                          type="range"
+                          id="contrast"
+                          name="contrast"
+                          min="0"
+                          max="2"
+                          step="0.05"
+                          value={storyGenSettings.contrast}
+                          onChange={handleSettingChange}
+                          className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer mt-1"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
+            </div>
+            <div className="pt-4 text-right">
+              <button
+                onClick={handleSaveAndGenerate}
+                disabled={isProcessing || loading}
+                className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg"
+              >
+                {isProcessing || loading
+                  ? "처리 중..."
+                  : "설정 저장 및 스토리 생성"}
+              </button>
             </div>
           </div>
         </div>
