@@ -12,6 +12,8 @@ const openai = new OpenAI({
   apiKey: process.env.CHATGPT_API_KEY,
 });
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // [GET] /api/projects - 모든 프로젝트 목록 가져오기
 router.get("/", async (req, res) => {
   try {
@@ -66,14 +68,12 @@ router.get("/:projectId", async (req, res) => {
 router.put("/:projectId", async (req, res) => {
   try {
     const { projectId } = req.params;
-    const settings = req.body; // { defaultGuidanceScale, defaultNegativePrompt }
-
+    const settings = req.body;
     const projectRef = db.collection("projects").doc(projectId);
     await projectRef.update({
       ...settings,
       updatedAt: new Date().toISOString(),
     });
-
     const updatedDoc = await projectRef.get();
     res.status(200).json({ id: updatedDoc.id, ...updatedDoc.data() });
   } catch (error) {
@@ -125,12 +125,11 @@ router.post("/:projectId/story", async (req, res) => {
   let aiResult = "";
   try {
     const { projectId } = req.params;
-    // 요청 본문에서 characterTemplate 객체를 받도록 구조 분해 할당
     const {
       platform = "youtube",
       topic = "A hero's unexpected journey",
       character = "A brave warrior",
-      characterTemplate = {}, // 캐릭터 템플릿 기본값은 빈 객체
+      characterTemplate = {},
       leonardoModelId = "1e60896f-3c26-4296-8ecc-53e2afecc132",
     } = req.body;
 
@@ -150,7 +149,6 @@ router.post("/:projectId/story", async (req, res) => {
       throw new Error("AI response does not contain a valid 'scenes' array.");
     }
 
-    // DB에 story 문서를 생성할 때 characterTemplate도 함께 저장
     const storyRef = await db
       .collection("projects")
       .doc(projectId)
@@ -158,7 +156,7 @@ router.post("/:projectId/story", async (req, res) => {
       .add({
         topic,
         character,
-        characterTemplate, // 여기에 저장
+        characterTemplate,
         platform,
         leonardoModelId,
         createdAt: new Date().toISOString(),
@@ -176,6 +174,7 @@ router.post("/:projectId/story", async (req, res) => {
         image_url: null,
         imgPrompt: null,
         videoPrompt: null,
+        sceneSettings: null,
       };
       const docRef = scenesCollection.doc();
       batch.set(docRef, sceneDoc);
@@ -199,14 +198,12 @@ router.post("/:projectId/story", async (req, res) => {
   }
 });
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
+// [POST] /api/scenes/:sceneId/generate-image - 특정 씬의 이미지 생성
 router.post("/scenes/:sceneId/generate-image", async (req, res) => {
   try {
     const { sceneId } = req.params;
     const { projectId, storyId, settings } = req.body;
 
-    // 1. DB에서 관련 데이터 로드 (Story 데이터까지 함께 로드)
     const storyRef = db
       .collection("projects")
       .doc(projectId)
@@ -227,22 +224,22 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
 
     let imgPrompt, videoPrompt;
 
-    // 사용자가 프롬프트를 직접 수정한 경우는 그대로 사용
     if (settings && settings.prompt) {
       imgPrompt = settings.prompt;
       videoPrompt = sceneData.videoPrompt || "Standard shot";
+      console.log("Using user-provided prompt for regeneration.");
     } else {
-      // --- ★★★ 수정된 부분: 고도화된 프롬프트 생성 로직 호출 ★★★ ---
       console.log("Generating new prompts with advanced settings...");
 
-      // story에서 캐릭터 템플릿, scene에서 씬별 설정을 가져옴
+      // --- ★★★ 버그 수정: DB의 예전 데이터가 아닌, 프론트에서 보낸 최신 settings 값을 사용해야 합니다. ★★★
       const characterTemplate = storyData.characterTemplate || {};
-      const sceneSettings = sceneData.sceneSettings || {};
+      // settings 객체 안에 있는 sceneSettings를 사용합니다.
+      const sceneSpecificSettings = settings.sceneSettings || {};
 
       const promptForPrompts = createImagePrompt(
         sceneData.text,
         characterTemplate,
-        sceneSettings
+        sceneSpecificSettings
       );
 
       const promptResponse = await openai.chat.completions.create({
@@ -257,7 +254,6 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
       videoPrompt = generatedPrompts.videoPrompt;
     }
 
-    // 3. 백엔드에서 설정값 안정화 처리
     const sanitizedSettings = {
       guidance_scale: settings.guidance_scale || 7,
       controlnets: settings.controlnets || [],
@@ -265,7 +261,6 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
       negative_prompt: settings.negative_prompt || "",
     };
 
-    // 4. Leonardo AI API에 보낼 최종 데이터 구성
     const generationPayload = {
       prompt: imgPrompt,
       modelId:
@@ -286,18 +281,21 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
     if (!generationPayload.negative_prompt)
       delete generationPayload.negative_prompt;
 
-    // 5. Leonardo AI에 이미지 생성 요청 및 결과 폴링
+    // --- ★★★ 디버깅을 위한 로그 추가 ★★★ ---
+    console.log("--- Sending to Leonardo AI --- PAYLOAD START ---");
+    console.log(JSON.stringify(generationPayload, null, 2));
+    console.log("--- PAYLOAD END ---");
+    // --- ★★★ 디버깅 코드 끝 ★★★ ---
+
     const generationResponse = await axios.post(
       "https://cloud.leonardo.ai/api/rest/v1/generations",
       generationPayload,
       { headers: { authorization: `Bearer ${process.env.LEONARDO_API_KEY}` } }
     );
-
     const generationId = generationResponse.data.sdGenerationJob.generationId;
     let generatedImage = null;
 
     for (let i = 0; i < 20; i++) {
-      // 최대 100초간 폴링
       await sleep(5000);
       const resultResponse = await axios.get(
         `https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`,
@@ -316,11 +314,9 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
       }
     }
 
-    if (!generatedImage) {
+    if (!generatedImage)
       throw new Error("Image generation timed out or failed.");
-    }
 
-    // 6. Firestore에 최종 결과 업데이트
     const updatePayload = {
       image_url: generatedImage.url,
       imgPrompt: imgPrompt,
@@ -333,11 +329,7 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
 
     await sceneRef.update(updatePayload);
 
-    // 7. 프론트엔드에 최종 씬 데이터 응답
-    res.status(200).json({
-      ...sceneData,
-      ...updatePayload,
-    });
+    res.status(200).json({ ...sceneData, ...updatePayload });
   } catch (error) {
     console.error("Error generating image:", error.stack);
     res.status(500).send("Internal Server Error");
