@@ -8,69 +8,6 @@ const {
 const OpenAI = require("openai");
 const axios = require("axios");
 
-const allModels = [
-  {
-    id: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",
-    name: "Leonardo Phoenix 1.0",
-    type: "phoenix",
-  },
-  {
-    id: "b2614463-296c-462a-9586-aafdb8f00e36",
-    name: "Flux Dev",
-    type: "flux",
-  },
-  {
-    id: "1dd50843-d653-4516-a8e3-f0238ee453ff",
-    name: "Flux Schnell",
-    type: "flux",
-  },
-  {
-    id: "05ce0082-2d80-4a2d-8653-4d1c85e2418e",
-    name: "Lucid Realism",
-    type: "lucid",
-  },
-  {
-    id: "e71a1c2f-4f80-4800-934f-2c68979d8cc8",
-    name: "Leonardo Anime XL",
-    type: "sdxl",
-  },
-  {
-    id: "b24e16ff-06e3-43eb-8d33-4416c2d75876",
-    name: "Leonardo Lightning XL",
-    type: "sdxl",
-  },
-  {
-    id: "16e7060a-803e-4df3-97ee-edcfa5dc9cc8",
-    name: "SDXL 1.0",
-    type: "sdxl",
-  },
-  {
-    id: "aa77f04e-3eec-4034-9c07-d0f619684628",
-    name: "Leonardo Kino XL",
-    type: "sdxl",
-  },
-  {
-    id: "5c232a9e-9061-4777-980a-ddc8e65647c6",
-    name: "Leonardo Vision XL",
-    type: "sdxl",
-  },
-  {
-    id: "1e60896f-3c26-4296-8ecc-53e2afecc132",
-    name: "Leonardo Diffusion XL",
-    type: "sdxl",
-  },
-  {
-    id: "d69c8273-6b17-4a30-a13e-d6637ae1c644",
-    name: "3D Animation Style",
-    type: "sdxl",
-  },
-  {
-    id: "ac614f96-1082-45bf-be9d-757f2d31c174",
-    name: "DreamShaper v7",
-    type: "sdxl",
-  },
-];
-
 const openai = new OpenAI({
   apiKey: process.env.CHATGPT_API_KEY,
 });
@@ -187,17 +124,14 @@ router.get("/:projectId/stories/:storyId/scenes", async (req, res) => {
 router.post("/:projectId/story", async (req, res) => {
   try {
     const { projectId } = req.params;
-    const {
-      topic,
-      character,
-      characterTemplate,
-      platform,
-      leonardoModelId,
-      styleUUID,
-      presetStyle,
-    } = req.body;
+    // 프론트엔드에서 템플릿 기반으로 모든 설정이 넘어오므로 그대로 받음
+    const storySettings = req.body;
 
-    const prompt = createStoryPrompt({ platform, topic, character });
+    const prompt = createStoryPrompt({
+      platform: storySettings.platform,
+      topic: storySettings.topic,
+      character: storySettings.character,
+    });
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -217,18 +151,9 @@ router.post("/:projectId/story", async (req, res) => {
       .doc(projectId)
       .collection("stories")
       .add({
-        topic,
-        character,
-        characterTemplate,
-        platform,
-        leonardoModelId, // 모델 ID 저장
-        styleUUID, // Style UUID 저장
-        presetStyle, // Preset Style 저장
+        ...storySettings, // 프론트에서 받은 모든 설정을 그대로 저장
         createdAt: new Date().toISOString(),
         status: "draft",
-        alchemy,
-        photoReal,
-        contrast,
       });
 
     const scenesCollection = storyRef.collection("scenes");
@@ -283,7 +208,6 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
 
     const storyData = storyDoc.data();
     const sceneData = sceneDoc.data();
-    const modelInfo = allModels.find((m) => m.id === storyData.leonardoModelId);
     let imgPrompt, videoPrompt;
 
     if (settings && settings.prompt) {
@@ -307,38 +231,41 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
       videoPrompt = generatedPrompts.videoPrompt;
     }
 
+    // storyData에 저장된 값을 기반으로 payload를 단순하게 구성
     const generationPayload = {
       prompt: imgPrompt,
-      modelId: storyData.leonardoModelId,
       width: 720,
       height: 1280,
       num_images: 1,
-      alchemy: storyData.alchemy ?? true,
       guidance_scale: settings.guidance_scale || 7,
       controlnets: settings.controlnets || [],
       elements: settings.elements || [],
       negative_prompt: settings.negative_prompt || "",
+      alchemy: storyData.alchemy,
+      photoReal: storyData.photoReal,
+      ultra: storyData.ultra,
+      enhancePrompt: storyData.enhancePrompt,
+      presetStyle: storyData.presetStyle,
+      styleUUID: storyData.styleUUID,
+      contrast: storyData.contrast,
     };
 
-    if (modelInfo) {
-      if (modelInfo.type === "sdxl") {
-        if (storyData.presetStyle)
-          generationPayload.presetStyle = storyData.presetStyle;
-        if (storyData.photoReal === true) generationPayload.photoReal = true;
-      } else if (["flux", "phoenix", "lucid"].includes(modelInfo.type)) {
-        if (storyData.styleUUID)
-          generationPayload.styleUUID = storyData.styleUUID;
-        if (storyData.contrast) generationPayload.contrast = storyData.contrast;
-      }
+    if (storyData.photoReal !== true) {
+      generationPayload.modelId = storyData.modelId;
     }
 
-    Object.keys(generationPayload).forEach(
-      (key) =>
-        (!generationPayload[key] ||
-          (Array.isArray(generationPayload[key]) &&
-            generationPayload[key].length === 0)) &&
-        delete generationPayload[key]
-    );
+    // 값이 없거나(null, undefined), false이거나, 빈 배열인 속성들을 payload에서 제거
+    Object.keys(generationPayload).forEach((key) => {
+      const value = generationPayload[key];
+      if (
+        value === null ||
+        value === undefined ||
+        value === false ||
+        (Array.isArray(value) && value.length === 0)
+      ) {
+        delete generationPayload[key];
+      }
+    });
 
     const generationResponse = await axios.post(
       "https://cloud.leonardo.ai/api/rest/v1/generations",

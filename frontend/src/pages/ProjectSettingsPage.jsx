@@ -3,84 +3,48 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import useProjectStore from "../store/projectStore";
 
 // --- 데이터 정의 ---
-const allModels = [
+const styleTemplates = [
   {
-    id: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",
-    name: "Leonardo Phoenix 1.0",
-    type: "phoenix",
+    id: "style_1",
+    name: "실사풍 애니메이션",
+    description: "일러스트와 실사 느낌이 조화된 고품질 스타일입니다.",
+    settings: {
+      modelId: "5c232a9e-9061-4777-980a-ddc8e65647c6", // Leonardo Vision XL
+      presetStyle: "CINEMATIC",
+      photoReal: true,
+      alchemy: true,
+      ultra: false,
+      enhancePrompt: true,
+    },
   },
   {
-    id: "b2614463-296c-462a-9586-aafdb8f00e36",
-    name: "Flux Dev",
-    type: "flux",
+    id: "style_2",
+    name: "일본 애니메이션",
+    description: "전통적인 일본 애니메이션(2D) 스타일입니다.",
+    settings: {
+      modelId: "e71a1c2f-4f80-4800-934f-2c68979d8cc8", // Leonardo Anime XL
+      presetStyle: "ANIME",
+      photoReal: false,
+      alchemy: true,
+      ultra: false,
+      enhancePrompt: false,
+    },
   },
   {
-    id: "1dd50843-d653-4516-a8e3-f0238ee453ff",
-    name: "Flux Schnell",
-    type: "flux",
-  },
-  {
-    id: "05ce0082-2d80-4a2d-8653-4d1c85e2418e",
-    name: "Lucid Realism",
-    type: "lucid",
-  },
-  {
-    id: "e71a1c2f-4f80-4800-934f-2c68979d8cc8",
-    name: "Leonardo Anime XL",
-    type: "sdxl",
-  },
-  {
-    id: "b24e16ff-06e3-43eb-8d33-4416c2d75876",
-    name: "Leonardo Lightning XL",
-    type: "sdxl",
-  },
-  {
-    id: "16e7060a-803e-4df3-97ee-edcfa5dc9cc8",
-    name: "SDXL 1.0",
-    type: "sdxl",
-  },
-  {
-    id: "aa77f04e-3eec-4034-9c07-d0f619684628",
-    name: "Leonardo Kino XL",
-    type: "sdxl",
-  },
-  {
-    id: "5c232a9e-9061-4777-980a-ddc8e65647c6",
-    name: "Leonardo Vision XL",
-    type: "sdxl",
-  },
-  {
-    id: "1e60896f-3c26-4296-8ecc-53e2afecc132",
-    name: "Leonardo Diffusion XL",
-    type: "sdxl",
-  },
-  {
-    id: "2067ae52-33fd-4a82-bb92-c2c55e7d2786",
-    name: "AlbedoBase XL",
-    type: "sdxl",
-  },
-  {
-    id: "d69c8273-6b17-4a30-a13e-d6637ae1c644",
-    name: "3D Animation Style",
-    type: "sdxl",
-  },
-  {
-    id: "ac614f96-1082-45bf-be9d-757f2d31c174",
-    name: "DreamShaper v7",
-    type: "sdxl",
+    id: "style_3",
+    name: "3D 애니메이션",
+    description: "픽사 스타일의 고품질 3D 렌더링 결과물을 만듭니다.",
+    settings: {
+      modelId: "d69c8273-6b17-4a30-a13e-d6637ae1c644", // 3D Animation Style
+      presetStyle: null,
+      photoReal: false,
+      alchemy: true,
+      ultra: true,
+      enhancePrompt: true,
+    },
   },
 ];
-const styleUUIDOptions = [
-  { uuid: "a5632c7c-ddbb-4e2f-ba34-8456ab3ac436", name: "Cinematic" },
-  { uuid: "645e4195-f63d-4715-a752-e2fb1e8b7c70", name: "Illustration" },
-  { uuid: "debdF72a-91a4-467b-bf61-cc02bdeb69c6", name: "3D Render" },
-];
-const presetStyleOptions = [
-  { value: "CINEMATIC", name: "Cinematic" },
-  { value: "FILM", name: "Film" },
-  { value: "3D_ANIMATION", name: "3D Animation" },
-  { value: "ANIME", name: "Anime" },
-];
+
 const characterOptions = [
   {
     id: 1,
@@ -111,6 +75,7 @@ const characterOptions = [
     description: "A goofy and lovable warthog.",
   },
 ];
+
 const initialTemplates = {
   1: {
     clothingStyle: "royal golden armor with a red cape",
@@ -172,21 +137,11 @@ const ProjectSettingsPage = () => {
     topic: "A brave lion becomes king",
     selectedCharId: 1,
     characterTemplate: initialTemplates[1],
-    modelId: "d69c8273-6b17-4a30-a13e-d6637ae1c644",
-    styleUUID: "",
-    presetStyle: "3D_ANIMATION",
-    alchemy: true,
-    photoReal: false,
-    contrast: 1.0,
+    selectedTemplateId: "style_1",
   });
 
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
-
-  const selectedModel = useMemo(
-    () => allModels.find((m) => m.id === storyGenSettings.modelId),
-    [storyGenSettings.modelId]
-  );
 
   useEffect(() => {
     if (!project) {
@@ -206,19 +161,8 @@ const ProjectSettingsPage = () => {
     }
   }, [project]);
 
-  const handleSettingChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    const finalValue =
-      type === "checkbox"
-        ? checked
-        : name === "contrast"
-        ? parseFloat(value)
-        : value; // contrast 값일 경우 숫자로 변환
-
-    setStoryGenSettings((prev) => ({
-      ...prev,
-      [name]: finalValue,
-    }));
+  const handleTopicChange = (e) => {
+    setStoryGenSettings((prev) => ({ ...prev, topic: e.target.value }));
   };
 
   const handleCharacterSelect = (id) => {
@@ -240,6 +184,13 @@ const ProjectSettingsPage = () => {
     }));
   };
 
+  const handleStyleTemplateSelect = (templateId) => {
+    setStoryGenSettings((prev) => ({
+      ...prev,
+      selectedTemplateId: templateId,
+    }));
+  };
+
   const handleSaveSettings = async () => {
     setIsProcessing(true);
     await updateProject(projectId, globalSettings);
@@ -256,12 +207,18 @@ const ProjectSettingsPage = () => {
       (c) => c.id === storyGenSettings.selectedCharId
     );
 
+    const selectedTemplate = styleTemplates.find(
+      (t) => t.id === storyGenSettings.selectedTemplateId
+    );
+
     const settingsToSave = {
-      ...storyGenSettings,
+      topic: storyGenSettings.topic,
+      characterTemplate: storyGenSettings.characterTemplate,
       character: selectedCharacter.description,
       platform: "youtube",
-      leonardoModelId: storyGenSettings.modelId,
+      ...selectedTemplate.settings,
     };
+
     await generateStory(projectId, settingsToSave);
 
     setIsProcessing(false);
@@ -360,7 +317,7 @@ const ProjectSettingsPage = () => {
                 name="topic"
                 rows="3"
                 value={storyGenSettings.topic}
-                onChange={handleSettingChange}
+                onChange={handleTopicChange}
                 className="w-full bg-gray-700 p-3 rounded-md"
               />
             </div>
@@ -375,8 +332,8 @@ const ProjectSettingsPage = () => {
                     onClick={() => handleCharacterSelect(char.id)}
                     className={`cursor-pointer rounded-lg overflow-hidden border-2 ${
                       storyGenSettings.selectedCharId === char.id
-                        ? "border-blue-500 ring-2"
-                        : "border-gray-600"
+                        ? "border-blue-500 ring-2 ring-blue-500"
+                        : "border-gray-600 hover:border-blue-400"
                     }`}
                   >
                     <p className="text-center text-sm bg-gray-700 p-2 truncate">
@@ -423,125 +380,25 @@ const ProjectSettingsPage = () => {
             </div>
             <div>
               <label className="block text-lg font-medium text-gray-200 mb-2">
-                3. 비주얼 스타일 및 상세 옵션
+                3. 비주얼 스타일 선택
               </label>
-              <select
-                name="modelId"
-                value={storyGenSettings.modelId}
-                onChange={handleSettingChange}
-                className="w-full bg-gray-700 p-3 rounded-md"
-              >
-                {allModels.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {styleTemplates.map((template) => (
+                  <div
+                    key={template.id}
+                    onClick={() => handleStyleTemplateSelect(template.id)}
+                    className={`cursor-pointer rounded-lg p-4 border-2 transition-all ${
+                      storyGenSettings.selectedTemplateId === template.id
+                        ? "border-blue-500 ring-2 ring-blue-500 bg-gray-700"
+                        : "border-gray-600 hover:border-blue-400"
+                    }`}
+                  >
+                    <h4 className="font-bold text-white">{template.name}</h4>
+                    <p className="text-sm text-gray-400 mt-1">
+                      {template.description}
+                    </p>
+                  </div>
                 ))}
-              </select>
-              <div className="mt-4 p-4 border border-gray-700 rounded-lg space-y-4">
-                <h4 className="text-md font-semibold text-gray-200 mb-3">
-                  스타일 상세 설정
-                </h4>
-                {selectedModel?.type === "sdxl" && (
-                  <div>
-                    <label
-                      htmlFor="presetStyle"
-                      className="text-sm font-medium text-gray-300"
-                    >
-                      Preset Style (For SDXL)
-                    </label>
-                    <select
-                      name="presetStyle"
-                      value={storyGenSettings.presetStyle}
-                      onChange={handleSettingChange}
-                      className="w-full bg-gray-600 p-2 mt-1 rounded-md text-sm"
-                    >
-                      {presetStyleOptions.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                {(selectedModel?.type === "flux" ||
-                  selectedModel?.type === "phoenix" ||
-                  selectedModel?.type === "lucid") && (
-                  <div>
-                    <label
-                      htmlFor="styleUUID"
-                      className="text-sm font-medium text-gray-300"
-                    >
-                      Style (For Phoenix/Flux)
-                    </label>
-                    <select
-                      name="styleUUID"
-                      value={storyGenSettings.styleUUID}
-                      onChange={handleSettingChange}
-                      className="w-full bg-gray-600 p-2 mt-1 rounded-md text-sm"
-                    >
-                      <option value="">None</option>
-                      {styleUUIDOptions.map((opt) => (
-                        <option key={opt.uuid} value={opt.uuid}>
-                          {opt.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                <div className="pt-4 border-t border-gray-700">
-                  <h5 className="text-sm font-semibold text-gray-300 mb-3">
-                    고급 옵션
-                  </h5>
-                  <div className="space-y-3">
-                    <label className="flex items-center text-sm cursor-pointer">
-                      <input
-                        type="checkbox"
-                        name="alchemy"
-                        checked={storyGenSettings.alchemy}
-                        onChange={handleSettingChange}
-                        className="w-4 h-4 mr-2"
-                      />{" "}
-                      Alchemy (품질 향상)
-                    </label>
-                    {selectedModel?.type === "sdxl" && (
-                      <label className="flex items-center text-sm cursor-pointer">
-                        <input
-                          type="checkbox"
-                          name="photoReal"
-                          checked={storyGenSettings.photoReal}
-                          onChange={handleSettingChange}
-                          className="mr-2"
-                        />{" "}
-                        PhotoReal (실사 표현)
-                      </label>
-                    )}
-                    {(selectedModel?.type === "flux" ||
-                      selectedModel?.type === "phoenix") && (
-                      <div>
-                        <label
-                          htmlFor="contrast"
-                          className="block text-sm font-medium text-gray-300"
-                        >
-                          Contrast:{" "}
-                          <span className="font-bold">
-                            {storyGenSettings.contrast.toFixed(2)}
-                          </span>
-                        </label>
-                        <input
-                          type="range"
-                          id="contrast"
-                          name="contrast"
-                          min="0"
-                          max="2"
-                          step="0.05"
-                          value={storyGenSettings.contrast}
-                          onChange={handleSettingChange}
-                          className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer mt-1"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
               </div>
             </div>
             <div className="pt-4 text-right">
