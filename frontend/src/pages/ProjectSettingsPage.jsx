@@ -2,7 +2,85 @@ import React, { useEffect, useState, useMemo } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import useProjectStore from "../store/projectStore";
 
-// 테스트용 캐릭터 데이터
+// --- 데이터 정의 ---
+const allModels = [
+  {
+    id: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",
+    name: "Leonardo Phoenix 1.0",
+    type: "phoenix",
+  },
+  {
+    id: "b2614463-296c-462a-9586-aafdb8f00e36",
+    name: "Flux Dev",
+    type: "flux",
+  },
+  {
+    id: "1dd50843-d653-4516-a8e3-f0238ee453ff",
+    name: "Flux Schnell",
+    type: "flux",
+  },
+  {
+    id: "05ce0082-2d80-4a2d-8653-4d1c85e2418e",
+    name: "Lucid Realism",
+    type: "lucid",
+  },
+  {
+    id: "e71a1c2f-4f80-4800-934f-2c68979d8cc8",
+    name: "Leonardo Anime XL",
+    type: "sdxl",
+  },
+  {
+    id: "b24e16ff-06e3-43eb-8d33-4416c2d75876",
+    name: "Leonardo Lightning XL",
+    type: "sdxl",
+  },
+  {
+    id: "16e7060a-803e-4df3-97ee-edcfa5dc9cc8",
+    name: "SDXL 1.0",
+    type: "sdxl",
+  },
+  {
+    id: "aa77f04e-3eec-4034-9c07-d0f619684628",
+    name: "Leonardo Kino XL",
+    type: "sdxl",
+  },
+  {
+    id: "5c232a9e-9061-4777-980a-ddc8e65647c6",
+    name: "Leonardo Vision XL",
+    type: "sdxl",
+  },
+  {
+    id: "1e60896f-3c26-4296-8ecc-53e2afecc132",
+    name: "Leonardo Diffusion XL",
+    type: "sdxl",
+  },
+  {
+    id: "2067ae52-33fd-4a82-bb92-c2c55e7d2786",
+    name: "AlbedoBase XL",
+    type: "sdxl",
+  },
+  {
+    id: "d69c8273-6b17-4a30-a13e-d6637ae1c644",
+    name: "3D Animation Style",
+    type: "sdxl",
+  },
+  {
+    id: "ac614f96-1082-45bf-be9d-757f2d31c174",
+    name: "DreamShaper v7",
+    type: "sdxl",
+  },
+];
+const styleUUIDOptions = [
+  { uuid: "a5632c7c-ddbb-4e2f-ba34-8456ab3ac436", name: "Cinematic" },
+  { uuid: "645e4195-f63d-4715-a752-e2fb1e8b7c70", name: "Illustration" },
+  { uuid: "debdF72a-91a4-467b-bf61-cc02bdeb69c6", name: "3D Render" },
+];
+const presetStyleOptions = [
+  { value: "CINEMATIC", name: "Cinematic" },
+  { value: "FILM", name: "Film" },
+  { value: "3D_ANIMATION", name: "3D Animation" },
+  { value: "ANIME", name: "Anime" },
+];
 const characterOptions = [
   {
     id: 1,
@@ -33,8 +111,6 @@ const characterOptions = [
     description: "A goofy and lovable warthog.",
   },
 ];
-
-// 캐릭터별 상세 템플릿 데이터
 const initialTemplates = {
   1: {
     clothingStyle: "royal golden armor with a red cape",
@@ -74,7 +150,6 @@ const ProjectSettingsPage = () => {
   const { projectId } = useParams();
   const navigate = useNavigate();
 
-  // Zustand 스토어 훅 (개별 선택)
   const projects = useProjectStore((state) => state.projects);
   const scenes = useProjectStore((state) => state.scenes);
   const loading = useProjectStore((state) => state.loading);
@@ -88,26 +163,36 @@ const ProjectSettingsPage = () => {
   );
   const storyExists = useMemo(() => scenes && scenes.length > 0, [scenes]);
 
-  // 컴포넌트 로컬 상태
   const [globalSettings, setGlobalSettings] = useState({
     defaultGuidanceScale: 7,
-    defaultNegativePrompt: "",
+    defaultNegativePrompt: "blurry, low quality, watermark, text",
   });
-  const [topic, setTopic] = useState("A brave lion becomes king");
-  const [selectedCharId, setSelectedCharId] = useState(1);
-  const [modelId, setModelId] = useState(
-    "1e60896f-3c26-4296-8ecc-53e2afecc132"
-  );
-  const [allCharacterTemplates, setAllCharacterTemplates] =
-    useState(initialTemplates);
+
+  const [storyGenSettings, setStoryGenSettings] = useState({
+    topic: "A brave lion becomes king",
+    selectedCharId: 1,
+    characterTemplate: initialTemplates[1],
+    modelId: "d69c8273-6b17-4a30-a13e-d6637ae1c644",
+    styleUUID: "",
+    presetStyle: "3D_ANIMATION",
+    alchemy: true,
+    photoReal: false,
+    contrast: 1.0,
+  });
+
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // 데이터 로딩 useEffect
+  const selectedModel = useMemo(
+    () => allModels.find((m) => m.id === storyGenSettings.modelId),
+    [storyGenSettings.modelId]
+  );
+
   useEffect(() => {
     if (!project) {
       fetchProject(projectId);
     }
+    setIsLoading(false);
   }, [projectId, project, fetchProject]);
 
   useEffect(() => {
@@ -118,23 +203,36 @@ const ProjectSettingsPage = () => {
           project.defaultNegativePrompt ||
           "blurry, low quality, watermark, text",
       });
-      setIsLoading(false);
     }
   }, [project]);
 
-  // 캐릭터 템플릿 변경 핸들러
+  const handleSettingChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setStoryGenSettings((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  };
+
+  const handleCharacterSelect = (id) => {
+    setStoryGenSettings((prev) => ({
+      ...prev,
+      selectedCharId: id,
+      characterTemplate: initialTemplates[id],
+    }));
+  };
+
   const handleTemplateChange = (e) => {
     const { name, value } = e.target;
-    setAllCharacterTemplates((prev) => ({
+    setStoryGenSettings((prev) => ({
       ...prev,
-      [selectedCharId]: {
-        ...prev[selectedCharId],
+      characterTemplate: {
+        ...prev.characterTemplate,
         [name]: value,
       },
     }));
   };
 
-  // 전역 설정만 저장하는 핸들러
   const handleSaveSettings = async () => {
     setIsProcessing(true);
     await updateProject(projectId, globalSettings);
@@ -143,22 +241,21 @@ const ProjectSettingsPage = () => {
     navigate(`/project/${projectId}`);
   };
 
-  // 설정 저장과 스토리 생성을 함께하는 핸들러
   const handleSaveAndGenerate = async () => {
     setIsProcessing(true);
     await updateProject(projectId, globalSettings);
 
     const selectedCharacter = characterOptions.find(
-      (c) => c.id === selectedCharId
+      (c) => c.id === storyGenSettings.selectedCharId
     );
-    const storySettings = {
-      topic,
+
+    const settingsToSave = {
+      ...storyGenSettings,
       character: selectedCharacter.description,
-      characterTemplate: allCharacterTemplates[selectedCharId], // 선택된 캐릭터의 템플릿을 전달
       platform: "youtube",
-      leonardoModelId: modelId,
+      leonardoModelId: storyGenSettings.modelId,
     };
-    await generateStory(projectId, storySettings);
+    await generateStory(projectId, settingsToSave);
 
     setIsProcessing(false);
     alert(
@@ -169,6 +266,7 @@ const ProjectSettingsPage = () => {
 
   if (isLoading)
     return <p className="text-center p-8">프로젝트 설정을 불러오는 중...</p>;
+
   return (
     <div>
       <Link
@@ -177,12 +275,10 @@ const ProjectSettingsPage = () => {
       >
         &larr; Back to Story Editor
       </Link>
-      {/* 스토리 존재 여부에 따라 페이지 제목 변경 */}
       <h1 className="text-4xl font-bold mb-8">
         {storyExists ? "프로젝트 설정" : "프로젝트 및 스토리 생성 설정"}
       </h1>
 
-      {/* --- 1. 전역 기본 설정 섹션 (항상 표시) --- */}
       <div className="mb-12">
         <h2 className="text-2xl font-semibold mb-2 border-b border-gray-600 pb-2">
           전역 기본 설정
@@ -236,7 +332,6 @@ const ProjectSettingsPage = () => {
         </div>
       </div>
 
-      {/* --- 2. 새 스토리 생성 섹션 (스토리가 없을 때만 표시) --- */}
       {!storyExists && (
         <div>
           <h2 className="text-2xl font-semibold mb-2 border-b border-gray-600 pb-2">
@@ -246,7 +341,6 @@ const ProjectSettingsPage = () => {
             아래 설정을 기반으로 새로운 스토리를 생성합니다.
           </p>
           <div className="space-y-8 max-w-3xl bg-gray-800 p-8 rounded-lg">
-            {/* Topic, Character, Style UI */}
             <div>
               <label
                 htmlFor="topic"
@@ -256,104 +350,164 @@ const ProjectSettingsPage = () => {
               </label>
               <textarea
                 id="topic"
+                name="topic"
                 rows="3"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 focus:ring-blue-500"
+                value={storyGenSettings.topic}
+                onChange={handleSettingChange}
+                className="w-full bg-gray-700 p-3 rounded-md"
               />
             </div>
             <div>
               <label className="block text-lg font-medium text-gray-200 mb-2">
-                2. 메인 캐릭터 선택
+                2. 메인 캐릭터
               </label>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {characterOptions.map((char) => (
                   <div
                     key={char.id}
-                    onClick={() => setSelectedCharId(char.id)}
-                    className={`cursor-pointer rounded-lg overflow-hidden border-2 transform transition-transform duration-200 hover:scale-105 ${
-                      selectedCharId === char.id
-                        ? "border-blue-500 ring-2 ring-blue-500"
-                        : "border-gray-600 hover:border-gray-400"
+                    onClick={() => handleCharacterSelect(char.id)}
+                    className={`cursor-pointer rounded-lg overflow-hidden border-2 ${
+                      storyGenSettings.selectedCharId === char.id
+                        ? "border-blue-500 ring-2"
+                        : "border-gray-600"
                     }`}
                   >
-                    <img
-                      src={char.imageUrl}
-                      alt={char.name}
-                      className="w-full h-40 object-cover"
-                    />
                     <p className="text-center text-sm bg-gray-700 p-2 truncate">
                       {char.name}
                     </p>
                   </div>
                 ))}
               </div>
-            </div>
-            <div className="mt-6 p-4 border border-gray-700 rounded-lg">
-              <h3 className="text-md font-semibold text-gray-200 mb-4">
-                캐릭터 상세 템플릿 설정
-              </h3>
-              {/* --- ★★★ 수정된 부분: 레이블이 포함된 UI 레이아웃 ★★★ --- */}
-              <div className="space-y-3">
-                {[
-                  { name: "clothingStyle", label: "의상 스타일" },
-                  { name: "bodyType", label: "체형" },
-                  { name: "hairstyle", label: "헤어스타일" },
-                  { name: "faceShape", label: "얼굴형" },
-                  { name: "nailStyle", label: "네일 스타일" },
-                  { name: "footStyle", label: "발 스타일" },
-                ].map(({ name, label }) => (
-                  <div
-                    key={name}
-                    className="grid grid-cols-3 items-center gap-4"
-                  >
-                    <label
-                      htmlFor={name}
-                      className="text-sm text-gray-400 text-right"
+              <div className="mt-6 p-4 border border-gray-700 rounded-lg">
+                <h3 className="text-md font-semibold text-gray-200 mb-4">
+                  캐릭터 상세 템플릿 설정
+                </h3>
+                <div className="space-y-3">
+                  {Object.entries({
+                    clothingStyle: "의상 스타일",
+                    bodyType: "체형",
+                    hairstyle: "헤어스타일",
+                    faceShape: "얼굴형",
+                    nailStyle: "네일/손톱 스타일",
+                    footStyle: "발 스타일",
+                  }).map(([name, label]) => (
+                    <div
+                      key={name}
+                      className="grid grid-cols-3 items-center gap-4"
                     >
-                      {label}
-                    </label>
-                    <input
-                      id={name}
-                      type="text"
-                      name={name}
-                      value={allCharacterTemplates[selectedCharId][name]}
-                      onChange={handleTemplateChange}
-                      className="col-span-2 bg-gray-700 p-2 rounded-md text-sm"
-                    />
-                  </div>
-                ))}
+                      <label
+                        htmlFor={name}
+                        className="text-sm text-gray-400 text-right"
+                      >
+                        {label}
+                      </label>
+                      <input
+                        id={name}
+                        type="text"
+                        name={name}
+                        value={storyGenSettings.characterTemplate[name]}
+                        onChange={handleTemplateChange}
+                        className="col-span-2 bg-gray-700 p-2 rounded-md text-sm"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
             <div>
-              <label
-                htmlFor="leonardo-model"
-                className="block text-lg font-medium text-gray-200 mb-2"
-              >
-                3. 비주얼 스타일 (AI 모델)
+              <label className="block text-lg font-medium text-gray-200 mb-2">
+                3. 비주얼 스타일 및 상세 옵션
               </label>
               <select
-                id="leonardo-model"
-                value={modelId}
-                onChange={(e) => setModelId(e.target.value)}
-                className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 focus:ring-blue-500"
+                name="modelId"
+                value={storyGenSettings.modelId}
+                onChange={handleSettingChange}
+                className="w-full bg-gray-700 p-3 rounded-md"
               >
-                <option value="1e60896f-3c26-4296-8ecc-53e2afecc132">
-                  Leonardo Diffusion XL
-                </option>
-                <option value="b7aa9931-a5de-427c-99c0-3d7751508a8f">
-                  3D Animation Style
-                </option>
-                <option value="ac614f96-1082-45bf-be9d-757f2d31c174">
-                  DreamShaper v7
-                </option>
+                {allModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))}
               </select>
+              <div className="mt-4 p-4 border border-gray-700 rounded-lg space-y-4">
+                {selectedModel?.type === "sdxl" && (
+                  <div>
+                    <label
+                      htmlFor="presetStyle"
+                      className="text-sm font-medium text-gray-300"
+                    >
+                      Preset Style (For SDXL)
+                    </label>
+                    <select
+                      name="presetStyle"
+                      value={storyGenSettings.presetStyle}
+                      onChange={handleSettingChange}
+                      className="w-full bg-gray-600 p-2 mt-1 rounded-md text-sm"
+                    >
+                      {presetStyleOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {(selectedModel?.type === "flux" ||
+                  selectedModel?.type === "phoenix" ||
+                  selectedModel?.type === "lucid") && (
+                  <div>
+                    <label
+                      htmlFor="styleUUID"
+                      className="text-sm font-medium text-gray-300"
+                    >
+                      Style (For Phoenix/Flux)
+                    </label>
+                    <select
+                      name="styleUUID"
+                      value={storyGenSettings.styleUUID}
+                      onChange={handleSettingChange}
+                      className="w-full bg-gray-600 p-2 mt-1 rounded-md text-sm"
+                    >
+                      <option value="">None</option>
+                      {styleUUIDOptions.map((opt) => (
+                        <option key={opt.uuid} value={opt.uuid}>
+                          {opt.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="flex items-center space-x-4">
+                  <label className="flex items-center text-sm">
+                    <input
+                      type="checkbox"
+                      name="alchemy"
+                      checked={storyGenSettings.alchemy}
+                      onChange={handleSettingChange}
+                      className="mr-2"
+                    />{" "}
+                    Alchemy
+                  </label>
+                  {selectedModel?.type === "sdxl" && (
+                    <label className="flex items-center text-sm">
+                      <input
+                        type="checkbox"
+                        name="photoReal"
+                        checked={storyGenSettings.photoReal}
+                        onChange={handleSettingChange}
+                        className="mr-2"
+                      />{" "}
+                      PhotoReal
+                    </label>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- 최종 액션 버튼 (상황에 따라 다른 기능 수행) --- */}
       <div className="mt-8 pt-4 text-center">
         {storyExists ? (
           <button

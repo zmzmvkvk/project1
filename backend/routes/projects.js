@@ -8,6 +8,69 @@ const {
 const OpenAI = require("openai");
 const axios = require("axios");
 
+const allModels = [
+  {
+    id: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",
+    name: "Leonardo Phoenix 1.0",
+    type: "phoenix",
+  },
+  {
+    id: "b2614463-296c-462a-9586-aafdb8f00e36",
+    name: "Flux Dev",
+    type: "flux",
+  },
+  {
+    id: "1dd50843-d653-4516-a8e3-f0238ee453ff",
+    name: "Flux Schnell",
+    type: "flux",
+  },
+  {
+    id: "05ce0082-2d80-4a2d-8653-4d1c85e2418e",
+    name: "Lucid Realism",
+    type: "lucid",
+  },
+  {
+    id: "e71a1c2f-4f80-4800-934f-2c68979d8cc8",
+    name: "Leonardo Anime XL",
+    type: "sdxl",
+  },
+  {
+    id: "b24e16ff-06e3-43eb-8d33-4416c2d75876",
+    name: "Leonardo Lightning XL",
+    type: "sdxl",
+  },
+  {
+    id: "16e7060a-803e-4df3-97ee-edcfa5dc9cc8",
+    name: "SDXL 1.0",
+    type: "sdxl",
+  },
+  {
+    id: "aa77f04e-3eec-4034-9c07-d0f619684628",
+    name: "Leonardo Kino XL",
+    type: "sdxl",
+  },
+  {
+    id: "5c232a9e-9061-4777-980a-ddc8e65647c6",
+    name: "Leonardo Vision XL",
+    type: "sdxl",
+  },
+  {
+    id: "1e60896f-3c26-4296-8ecc-53e2afecc132",
+    name: "Leonardo Diffusion XL",
+    type: "sdxl",
+  },
+  {
+    id: "d69c8273-6b17-4a30-a13e-d6637ae1c644",
+    name: "3D Animation Style",
+    type: "sdxl",
+  },
+  {
+    id: "ac614f96-1082-45bf-be9d-757f2d31c174",
+    name: "DreamShaper v7",
+    type: "sdxl",
+  },
+];
+
 const openai = new OpenAI({
   apiKey: process.env.CHATGPT_API_KEY,
 });
@@ -122,15 +185,16 @@ router.get("/:projectId/stories/:storyId/scenes", async (req, res) => {
 
 // [POST] /api/projects/:projectId/story - AI를 사용하여 스토리 생성
 router.post("/:projectId/story", async (req, res) => {
-  let aiResult = "";
   try {
     const { projectId } = req.params;
     const {
-      platform = "youtube",
-      topic = "A hero's unexpected journey",
-      character = "A brave warrior",
-      characterTemplate = {},
-      leonardoModelId = "1e60896f-3c26-4296-8ecc-53e2afecc132",
+      topic,
+      character,
+      characterTemplate,
+      platform,
+      leonardoModelId,
+      styleUUID,
+      presetStyle,
     } = req.body;
 
     const prompt = createStoryPrompt({ platform, topic, character });
@@ -141,8 +205,7 @@ router.post("/:projectId/story", async (req, res) => {
       response_format: { type: "json_object" },
     });
 
-    aiResult = response.choices[0].message.content;
-    const scenesData = JSON.parse(aiResult);
+    const scenesData = JSON.parse(response.choices[0].message.content);
     const sceneArray = scenesData.scenes;
 
     if (!Array.isArray(sceneArray)) {
@@ -158,7 +221,9 @@ router.post("/:projectId/story", async (req, res) => {
         character,
         characterTemplate,
         platform,
-        leonardoModelId,
+        leonardoModelId, // 모델 ID 저장
+        styleUUID, // Style UUID 저장
+        presetStyle, // Preset Style 저장
         createdAt: new Date().toISOString(),
         status: "draft",
       });
@@ -174,7 +239,6 @@ router.post("/:projectId/story", async (req, res) => {
         image_url: null,
         imgPrompt: null,
         videoPrompt: null,
-        sceneSettings: null,
       };
       const docRef = scenesCollection.doc();
       batch.set(docRef, sceneDoc);
@@ -188,13 +252,8 @@ router.post("/:projectId/story", async (req, res) => {
       scenes: scenesForResponse,
     });
   } catch (error) {
-    console.error("--- AI Story Generation Failed ---");
-    console.error("Request Body:", req.body);
-    console.error("ChatGPT Raw Response before error:", aiResult);
-    console.error("Full Error Stack:", error);
-    res
-      .status(500)
-      .send("Internal Server Error: Failed to generate story with AI.");
+    console.error("Error generating story:", error);
+    res.status(500).send("Internal Server Error");
   }
 });
 
@@ -210,38 +269,29 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
       .collection("stories")
       .doc(storyId);
     const sceneRef = storyRef.collection("scenes").doc(sceneId);
-
     const [storyDoc, sceneDoc] = await Promise.all([
       storyRef.get(),
       sceneRef.get(),
     ]);
 
-    if (!sceneDoc.exists) return res.status(404).send("Scene not found");
-    if (!storyDoc.exists) return res.status(404).send("Story not found");
+    if (!sceneDoc.exists || !storyDoc.exists) {
+      return res.status(404).send("Not found");
+    }
 
     const storyData = storyDoc.data();
     const sceneData = sceneDoc.data();
-
+    const modelInfo = allModels.find((m) => m.id === storyData.leonardoModelId);
     let imgPrompt, videoPrompt;
 
     if (settings && settings.prompt) {
       imgPrompt = settings.prompt;
       videoPrompt = sceneData.videoPrompt || "Standard shot";
-      console.log("Using user-provided prompt for regeneration.");
     } else {
-      console.log("Generating new prompts with advanced settings...");
-
-      // --- ★★★ 버그 수정: DB의 예전 데이터가 아닌, 프론트에서 보낸 최신 settings 값을 사용해야 합니다. ★★★
-      const characterTemplate = storyData.characterTemplate || {};
-      // settings 객체 안에 있는 sceneSettings를 사용합니다.
-      const sceneSpecificSettings = settings.sceneSettings || {};
-
       const promptForPrompts = createImagePrompt(
         sceneData.text,
-        characterTemplate,
-        sceneSpecificSettings
+        storyData.characterTemplate,
+        settings.sceneSettings
       );
-
       const promptResponse = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [{ role: "user", content: promptForPrompts }],
@@ -254,38 +304,35 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
       videoPrompt = generatedPrompts.videoPrompt;
     }
 
-    const sanitizedSettings = {
+    const generationPayload = {
+      prompt: imgPrompt,
+      modelId: storyData.leonardoModelId,
+      width: 1024,
+      height: 576,
+      num_images: 1,
       guidance_scale: settings.guidance_scale || 7,
       controlnets: settings.controlnets || [],
       elements: settings.elements || [],
       negative_prompt: settings.negative_prompt || "",
     };
 
-    const generationPayload = {
-      prompt: imgPrompt,
-      modelId:
-        storyData.leonardoModelId || "1e60896f-3c26-4296-8ecc-53e2afecc132",
-      width: 1024,
-      height: 576,
-      num_images: 1,
-      guidance_scale: sanitizedSettings.guidance_scale,
-      controlnets: sanitizedSettings.controlnets,
-      elements: sanitizedSettings.elements,
-      negative_prompt: sanitizedSettings.negative_prompt,
-    };
+    if (modelInfo) {
+      if (modelInfo.type === "sdxl") {
+        if (storyData.presetStyle)
+          generationPayload.presetStyle = storyData.presetStyle;
+      } else if (["flux", "phoenix", "lucid"].includes(modelInfo.type)) {
+        if (storyData.styleUUID)
+          generationPayload.styleUUID = storyData.styleUUID;
+      }
+    }
 
-    if (generationPayload.controlnets.length === 0)
-      delete generationPayload.controlnets;
-    if (generationPayload.elements.length === 0)
-      delete generationPayload.elements;
-    if (!generationPayload.negative_prompt)
-      delete generationPayload.negative_prompt;
-
-    // --- ★★★ 디버깅을 위한 로그 추가 ★★★ ---
-    console.log("--- Sending to Leonardo AI --- PAYLOAD START ---");
-    console.log(JSON.stringify(generationPayload, null, 2));
-    console.log("--- PAYLOAD END ---");
-    // --- ★★★ 디버깅 코드 끝 ★★★ ---
+    Object.keys(generationPayload).forEach(
+      (key) =>
+        (!generationPayload[key] ||
+          (Array.isArray(generationPayload[key]) &&
+            generationPayload[key].length === 0)) &&
+        delete generationPayload[key]
+    );
 
     const generationResponse = await axios.post(
       "https://cloud.leonardo.ai/api/rest/v1/generations",
@@ -302,15 +349,9 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
         { headers: { authorization: `Bearer ${process.env.LEONARDO_API_KEY}` } }
       );
       const generationResult = resultResponse.data.generations_by_pk;
-      if (
-        generationResult &&
-        generationResult.status === "COMPLETE" &&
-        generationResult.generated_images.length > 0
-      ) {
+      if (generationResult && generationResult.status === "COMPLETE") {
         generatedImage = generationResult.generated_images[0];
         break;
-      } else if (generationResult && generationResult.status === "FAILED") {
-        throw new Error("Leonardo AI image generation failed.");
       }
     }
 
@@ -319,19 +360,18 @@ router.post("/scenes/:sceneId/generate-image", async (req, res) => {
 
     const updatePayload = {
       image_url: generatedImage.url,
-      imgPrompt: imgPrompt,
-      videoPrompt: videoPrompt,
-      sceneSettings: settings.sceneSettings || sceneData.sceneSettings || null,
-      guidance_scale: sanitizedSettings.guidance_scale,
-      controlnets: sanitizedSettings.controlnets,
-      elements: sanitizedSettings.elements,
+      imgPrompt,
+      videoPrompt,
+      sceneSettings: settings.sceneSettings || null,
+      guidance_scale: settings.guidance_scale,
+      controlnets: settings.controlnets || [],
+      elements: settings.elements || [],
     };
-
     await sceneRef.update(updatePayload);
 
     res.status(200).json({ ...sceneData, ...updatePayload });
   } catch (error) {
-    console.error("Error generating image:", error.stack);
+    console.error("Error generating image:", error);
     res.status(500).send("Internal Server Error");
   }
 });
